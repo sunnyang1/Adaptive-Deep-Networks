@@ -1,0 +1,288 @@
+# =============================================================================
+# Adaptive Deep Networks - Git Ignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django / Flask stuff
+*.log
+local_settings.py
+db.sqlite3
+
+# Scrapy
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# celery
+ celerybeat-schedule
+
+# SageMath
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# MkDocs
+documentation/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# -----------------------------------------------------------------------------
+# Deep Learning / ML
+# -----------------------------------------------------------------------------
+# Model checkpoints and weights
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.h5
+*.pb
+*.onnx
+*.tflite
+*.mlmodel
+
+# Training artifacts
+checkpoints/
+runs/
+wandb/
+logs/
+lightning_logs/
+output/
+outputs/
+results/
+experiments/
+
+# Datasets (large files)
+data/
+datasets/
+raw_data/
+processed_data/
+*.tfrecord
+*.lmdb
+
+# Cache
+.cache/
+pretrained/
+pretrained_models/
+
+# TensorBoard
+events.out.tfevents.*
+
+# Weights & Biases
+wandb/
+
+# Hugging Face cache
+.cache/huggingface/
+ transformers_cache/
+
+# -----------------------------------------------------------------------------
+# Lambda AI / Cloud
+# -----------------------------------------------------------------------------
+# SSH keys and credentials
+*.pem
+*.key
+.aws/
+.gcp/
+.azure/
+
+# Cloud sync artifacts
+.sync/
+.cloud/
+
+# Temporary files from cloud instances
+/tmp/
+*.tmp
+
+# -----------------------------------------------------------------------------
+# IDE / Editors
+# -----------------------------------------------------------------------------
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# Eclipse
+.metadata/
+*.pydevproject
+
+# Xcode
+*.xcworkspace/
+*.xcuserdata/
+
+# -----------------------------------------------------------------------------
+# OS Generated Files
+# -----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.nfs*
+
+# -----------------------------------------------------------------------------
+# Project Specific
+# -----------------------------------------------------------------------------
+# Validation results (generated)
+validation_results/
+results/
+benchmark_results/
+ablation_results/
+
+# Large output files
+*.json.gz
+*.csv.gz
+*.pkl.gz
+*.tar.gz
+*.zip
+
+# Plots and figures (generated)
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
+!docs/figures/*.png
+!docs/figures/*.pdf
+
+# Profiling
+*.prof
+*.stats
+prof/
+
+# Core dumps
+core
+core.*
+
+# -----------------------------------------------------------------------------
+# Keep These Files
+# -----------------------------------------------------------------------------
+!.gitkeep
+!**/.gitkeep

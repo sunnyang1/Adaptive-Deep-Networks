@@ -1,0 +1,158 @@
+{
+  "projectName": "Adaptive Deep Networks Validation",
+  "branchName": "feature/validation-framework",
+  "description": "验证框架用于在Lambda AI上验证Adaptive Deep Networks论文的三个核心组件",
+  "complexity": "complex",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Block AttnRes 核心实现",
+      "description": "实现Block Attention Residuals机制，支持两阶段计算，伪查询向量零初始化",
+      "acceptanceCriteria": [
+        "实现block_attn_res函数，支持两阶段计算",
+        "伪查询向量零初始化",
+        "内存复杂度O(Nd)验证",
+        "单元测试覆盖率>90%"
+      ],
+      "priority": 1,
+      "estimatedMinutes": 5,
+      "passes": false,
+      "dependencies": []
+    },
+    {
+      "id": "US-002",
+      "title": "伪查询向量学习验证",
+      "description": "验证伪查询向量的学习动态，从均匀分布到专业化的转变",
+      "acceptanceCriteria": [
+        "监控注意力权重分布变化",
+        "验证零初始化行为",
+        "记录专业化模式",
+        "可视化注意力热图"
+      ],
+      "priority": 2,
+      "estimatedMinutes": 3,
+      "passes": false,
+      "dependencies": ["US-001"]
+    },
+    {
+      "id": "US-003",
+      "title": "Dynamic Gating 实现",
+      "description": "实现基于重建损失的动态门控，自适应分配计算资源",
+      "acceptanceCriteria": [
+        "实现L_rec计算（TTT重建损失）",
+        "实现EMA阈值校准",
+        "目标更新率维持（ρ_target）",
+        "门控决策准确率>80%"
+      ],
+      "priority": 1,
+      "estimatedMinutes": 4,
+      "passes": false,
+      "dependencies": []
+    },
+    {
+      "id": "US-004",
+      "title": "qTTT 实现",
+      "description": "实现Query-only Test-Time Training，在推理时进行适应性优化",
+      "acceptanceCriteria": [
+        "实现qTTT_adapt函数",
+        "支持伪查询和查询投影两种目标",
+        "保持KV Cache冻结",
+        "边距最大化损失实现"
+      ],
+      "priority": 1,
+      "estimatedMinutes": 5,
+      "passes": false,
+      "dependencies": []
+    },
+    {
+      "id": "US-005",
+      "title": "Needle-in-Haystack 基准",
+      "description": "运行针在大海捞针测试，验证长上下文检索能力",
+      "acceptanceCriteria": [
+        "支持1K-256K上下文长度",
+        "多深度位置测试（10 depths/length）",
+        "准确率报告（目标: 86.9% avg）",
+        "与基线对比"
+      ],
+      "priority": 2,
+      "estimatedMinutes": 4,
+      "passes": false,
+      "dependencies": ["US-001", "US-004"]
+    },
+    {
+      "id": "US-006",
+      "title": "MATH 数据集验证",
+      "description": "在MATH数据集上评估，验证数学推理能力",
+      "acceptanceCriteria": [
+        "支持5个难度级别",
+        "准确率报告（目标: 52.3% @ 7B）",
+        "与CoT、Self-Consistency对比",
+        "计算效率分析"
+      ],
+      "priority": 2,
+      "estimatedMinutes": 4,
+      "passes": false,
+      "dependencies": ["US-003", "US-004"]
+    },
+    {
+      "id": "US-007",
+      "title": "FLOP 等效性验证",
+      "description": "验证宽度-深度FLOP等效性，确认T_think ≈ 2 * N_qTTT * k",
+      "acceptanceCriteria": [
+        "测量思考token生成成本",
+        "测量qTTT步骤成本",
+        "验证等效公式",
+        "生成对比报告"
+      ],
+      "priority": 3,
+      "estimatedMinutes": 3,
+      "passes": false,
+      "dependencies": ["US-004"]
+    },
+    {
+      "id": "US-008",
+      "title": "Lambda AI 部署脚本",
+      "description": "提供Lambda AI部署脚本，快速启动验证实验",
+      "acceptanceCriteria": [
+        "环境配置脚本",
+        "多GPU启动脚本",
+        "资源监控",
+        "实验调度脚本"
+      ],
+      "priority": 2,
+      "estimatedMinutes": 4,
+      "passes": false,
+      "dependencies": []
+    },
+    {
+      "id": "US-009",
+      "title": "端到端集成测试",
+      "description": "运行端到端集成测试，验证所有组件协同工作",
+      "acceptanceCriteria": [
+        "完整前向传播测试",
+        "梯度流动验证",
+        "内存使用监控",
+        "性能基准对比"
+      ],
+      "priority": 1,
+      "estimatedMinutes": 5,
+      "passes": false,
+      "dependencies": ["US-001", "US-003", "US-004"]
+    },
+    {
+      "id": "US-010",
+      "title": "消融研究脚本",
+      "description": "运行消融研究，量化各组件贡献",
+      "acceptanceCriteria": [
+        "w/o qTTT配置",
+        "w/o Gating配置",
+        "w/o AttnRes配置",
+        "组件贡献分析报告"
+      ],
+      "priority": 3,
+      "estimatedMinutes": 4,
+      "passes": false,
+      "dependencies": ["US-005", "US-006"]
+    }
+  ]
+}
