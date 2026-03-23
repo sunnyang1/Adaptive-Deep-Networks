@@ -38,9 +38,11 @@ class TestRMSNorm:
         norm = RMSNorm(128)
         x = torch.randn(2, 10, 128) * 10
         out = norm(x)
-        # Check that output has roughly unit norm
-        mean_norm = out.norm(dim=-1).mean()
-        assert 0.9 < mean_norm < 1.1
+        # RMSNorm produces unit RMS, not unit L2 norm
+        # L2 norm = sqrt(dim) * RMS = sqrt(128) ≈ 11.31
+        # Check that output has roughly unit RMS
+        mean_rms = torch.sqrt(torch.mean(out ** 2, dim=-1)).mean()
+        assert 0.9 < mean_rms < 1.1
 
 
 class TestBlockAttnRes:
