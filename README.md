@@ -1,5 +1,9 @@
 # Adaptive Deep Networks: Validation Framework
 
+[![Validation](https://github.com/sunnyang1/Adaptive-Deep-Networks-Integrating-Attention-Residuals-Dynamic-Computation-and-Test-Time-Adaptation/workflows/Validation/badge.svg)](https://github.com/sunnyang1/Adaptive-Deep-Networks-Integrating-Attention-Residuals-Dynamic-Computation-and-Test-Time-Adaptation/actions)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+
 Validation framework for the paper "Adaptive Deep Networks: Integrating Attention Residuals, Dynamic Computation, and Test-Time Adaptation".
 
 ## Overview

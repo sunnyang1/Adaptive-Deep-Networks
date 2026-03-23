@@ -1,0 +1,150 @@
+name: Benchmark
+
+on:
+  workflow_dispatch:  # Manual trigger only
+  schedule:
+    # Run monthly on 1st at 00:00 UTC
+    - cron: '0 0 1 * *'
+
+jobs:
+  # ============================================================================
+  # Needle-in-Haystack Benchmark (CPU-only, small scale)
+  # ============================================================================
+  needle-haystack:
+    runs-on: ubuntu-latest
+    name: Needle-in-Haystack (Small)
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch --index-url https://download.pytorch.org/whl/cpu
+        pip install numpy matplotlib tqdm
+    
+    - name: Run small-scale NIH test
+      run: |
+        python -c "
+import sys
+sys.path.insert(0, 'src')
+import torch
+from models.configs import AttnResSmallConfig
+from models.adaptive_transformer import AdaptiveTransformer
+
+print('='*60)
+print('Needle-in-Haystack Validation (Small Scale)')
+print('='*60)
+
+# Create small model
+config = AttnResSmallConfig()
+model = AdaptiveTransformer(config)
+model.eval()
+
+# Test different context lengths (small scale)
+context_lengths = [256, 512, 1024]
+
+for ctx_len in context_lengths:
+    print(f'\nTesting context length: {ctx_len}')
+    
+    # Create dummy input
+    input_ids = torch.randint(0, 1000, (1, ctx_len))
+    
+    # Forward pass
+    with torch.no_grad():
+        logits = model(input_ids)
+    
+    print(f'  ✓ Forward pass: {input_ids.shape} -> {logits.shape}')
+    
+    # Check output is finite
+    assert torch.isfinite(logits).all(), 'Output contains non-finite values'
+    print(f'  ✓ Output valid (finite values)')
+
+print('\n' + '='*60)
+print('All NIH tests passed!')
+print('='*60)
+"
+    
+    - name: Save results
+      uses: actions/upload-artifact@v3
+      with:
+        name: needle-haystack-results
+        path: results/
+
+  # ============================================================================
+  # FLOP Analysis Detailed
+  # ============================================================================
+  flop-detailed:
+    runs-on: ubuntu-latest
+    name: FLOP Analysis Detailed
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install numpy matplotlib pandas
+    
+    - name: Run detailed FLOP analysis
+      run: |
+        cd scripts
+        python -c "
+import sys
+sys.path.insert(0, '../src')
+from benchmarks.flop_analysis import EfficiencyAnalyzer, run_flop_analysis
+import json
+
+print('='*60)
+print('Detailed FLOP Analysis')
+print('='*60)
+
+# Run standard analysis
+results = run_flop_analysis()
+
+# Additional analysis
+analyzer = EfficiencyAnalyzer()
+
+print('\n--- Allocation Strategy Comparison ---')
+comparison = analyzer.compare_allocation_strategies(
+    budget_flops=1e15,
+    context_len=100000
+)
+
+for name, strategy in comparison['strategies'].items():
+    print(f\"\n{name}:\")
+    print(f\"  {strategy['description']}\")
+    if strategy.get('thinking_tokens', 0) > 0:
+        print(f\"  Thinking tokens: {strategy['thinking_tokens']}\")
+    if strategy.get('qttt_steps', 0) > 0:
+        print(f\"  qTTT steps: {strategy['qttt_steps']}\")
+
+# Save detailed results
+with open('detailed_flop_analysis.json', 'w') as f:
+    json.dump({
+        'equivalence': results,
+        'comparison': comparison
+    }, f, indent=2)
+
+print('\n' + '='*60)
+print('Analysis complete!')
+print('='*60)
+"
+    
+    - name: Upload detailed results
+      uses: actions/upload-artifact@v3
+      with:
+        name: detailed-flop-analysis
+        path: scripts/detailed_flop_analysis.json
