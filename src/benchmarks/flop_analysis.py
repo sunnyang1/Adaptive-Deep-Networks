@@ -4,10 +4,16 @@ FLOP Analysis for Adaptive Deep Networks
 Validates FLOP equivalence: T_think ≈ 2 * N_qTTT * k
 """
 
-import torch
-import torch.nn as nn
 from typing import Dict, Tuple
 import json
+
+# Optional torch import (for type hints only)
+try:
+    import torch
+    import torch.nn as nn
+except ImportError:
+    torch = None
+    nn = None
 
 
 class FLOPCounter:
