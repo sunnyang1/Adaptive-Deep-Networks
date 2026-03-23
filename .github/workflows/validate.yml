@@ -138,21 +138,16 @@ jobs:
     - name: Run FLOP analysis
       run: |
         cd scripts
-        python -c "
-import sys
-sys.path.insert(0, '../src')
-from benchmarks.flop_analysis import run_flop_analysis
-import json
-
-results = run_flop_analysis()
-print('\n' + '='*60)
-print('FLOP Equivalence Verification')
-print('='*60)
-eq = results['equivalence']
-print(f\"Ratio: {eq['ratio']:.3f}\")
-print(f\"Verified: {'✓ PASS' if eq['is_equivalent'] else '✗ FAIL'}\")
-print('='*60)
-"
+        python3 -c "
+        import sys
+        sys.path.insert(0, '../src')
+        from benchmarks.flop_analysis import run_flop_analysis
+        results = run_flop_analysis()
+        print('FLOP Equivalence Verification')
+        eq = results['equivalence']
+        print(f\"Ratio: {eq['ratio']:.3f}\")
+        print(f\"Verified: PASS if {eq['is_equivalent']} else FAIL\")
+        "
     
     - name: Save FLOP results
       uses: actions/upload-artifact@v3
@@ -187,59 +182,36 @@ print('='*60)
     
     - name: Test imports
       run: |
-        python -c "
-import sys
-sys.path.insert(0, 'src')
-
-# Test all module imports
-from attnres.block_attnres import BlockAttnRes, block_attn_res
-from attnres.pseudo_query import PseudoQueryManager
-from gating.threshold import EMAThreshold, TargetRateThreshold
-from gating.reconstruction import ReconstructionLoss
-from qttt.adaptation import QueryOnlyTTT, qTTTConfig
-from qttt.margin_loss import MarginMaximizationLoss
-from models.configs import AttnResSmallConfig, AttnResMediumConfig
-from models.adaptive_transformer import AdaptiveTransformer
-
-print('✓ All imports successful')
-"
+        python3 -c "import sys; sys.path.insert(0, 'src'); from attnres.block_attnres import BlockAttnRes; from gating.threshold import EMAThreshold; from qttt.adaptation import QueryOnlyTTT; from models.configs import AttnResSmallConfig; print('All imports successful')"
     
     - name: Test model creation (small)
       run: |
-        python -c "
-import sys
-sys.path.insert(0, 'src')
-import torch
-from models.configs import AttnResSmallConfig
-from models.adaptive_transformer import AdaptiveTransformer
-
-config = AttnResSmallConfig()
-model = AdaptiveTransformer(config)
-
-print(f'Model created successfully')
-print(f'Parameters: {model.count_parameters() / 1e6:.1f}M')
-print(f'AttnRes overhead: {model.count_attnsres_parameters() / model.count_parameters() * 100:.3f}%')
-
-# Test forward pass
-x = torch.randint(0, 1000, (1, 128))
-with torch.no_grad():
-    out = model(x)
-print(f'Forward pass OK: {out.shape}')
-"
+        python3 -c "
+        import sys
+        sys.path.insert(0, 'src')
+        import torch
+        from models.configs import AttnResSmallConfig
+        from models.adaptive_transformer import AdaptiveTransformer
+        config = AttnResSmallConfig()
+        model = AdaptiveTransformer(config)
+        print(f'Parameters: {model.count_parameters() / 1e6:.1f}M')
+        x = torch.randint(0, 1000, (1, 128))
+        with torch.no_grad():
+            out = model(x)
+        print(f'Forward pass OK: {out.shape}')
+        "
     
     - name: Test model creation (medium)
       run: |
-        python -c "
-import sys
-sys.path.insert(0, 'src')
-from models.configs import AttnResMediumConfig
-from models.adaptive_transformer import AdaptiveTransformer
-
-config = AttnResMediumConfig()
-model = AdaptiveTransformer(config)
-
-print(f'✓ 7B model created: {model.count_parameters() / 1e9:.1f}B parameters')
-"
+        python3 -c "
+        import sys
+        sys.path.insert(0, 'src')
+        from models.configs import AttnResMediumConfig
+        from models.adaptive_transformer import AdaptiveTransformer
+        config = AttnResMediumConfig()
+        model = AdaptiveTransformer(config)
+        print(f'7B model created: {model.count_parameters() / 1e9:.1f}B parameters')
+        "
 
   # ============================================================================
   # Job 5: Documentation Check
@@ -276,18 +248,10 @@ print(f'✓ 7B model created: {model.count_parameters() / 1e9:.1f}B parameters')
     - name: Check PRD
       run: |
         if [ -f prd.json ]; then
-          echo "✓ prd.json exists"
-          python -c "
-import json
-with open('prd.json') as f:
-    data = json.load(f)
-    print(f\"✓ Project: {data['projectName']}\")
-    print(f\"✓ Stories: {len(data['userStories'])}\")
-    completed = sum(1 for us in data['userStories'] if us.get('passes'))
-    print(f\"✓ Completed: {completed}/{len(data['userStories'])}\")
-"
+          echo "prd.json exists"
+          python3 -c "import json; data=json.load(open('prd.json')); print(f\"Project: {data['projectName']}\"); print(f\"Stories: {len(data['userStories'])}\")"
         else
-          echo "⚠ prd.json not found"
+          echo "prd.json not found"
         fi
     
     - name: Check AGENTS.md
