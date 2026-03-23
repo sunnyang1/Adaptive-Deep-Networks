@@ -10,10 +10,10 @@ import torch.nn.functional as F
 from typing import Optional, Tuple, List, Dict
 from dataclasses import dataclass
 
-from .configs import ModelConfig
-from ..attnres.block_attnres import BlockAttnRes, RMSNorm
-from ..gating.threshold import DynamicThreshold
-from ..qttt.adaptation import QueryOnlyTTT, KVCache
+from models.configs import ModelConfig
+from attnres.block_attnres import BlockAttnRes, RMSNorm
+from gating.threshold import DynamicThreshold
+from qttt.adaptation import QueryOnlyTTT, KVCache
 
 
 class AdaptiveAttention(nn.Module):
@@ -323,7 +323,7 @@ def create_adaptive_transformer(
     **kwargs
 ) -> AdaptiveTransformer:
     """Factory function to create model."""
-    from .configs import get_config
+    from models.configs import get_config
     
     config = get_config(config_name)
     

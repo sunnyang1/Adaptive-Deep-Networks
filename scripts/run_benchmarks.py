@@ -13,17 +13,28 @@ import os
 import sys
 import json
 import argparse
-import torch
 from datetime import datetime
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Setup path for imports
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_dir = os.path.dirname(script_dir)
+src_dir = os.path.join(project_dir, 'src')
 
-from models.configs import get_config, print_config
-from models.adaptive_transformer import create_adaptive_transformer
-from benchmarks.needle_haystack import NeedleHaystackBenchmark
-from benchmarks.math_eval import MATHEvaluator
-from benchmarks.flop_analysis import run_flop_analysis
+# Add project root and src to path
+sys.path.insert(0, project_dir)
+sys.path.insert(0, src_dir)
+
+# Import after path setup
+try:
+    from models.configs import get_config, print_config
+    from models.adaptive_transformer import create_adaptive_transformer
+    from benchmarks.needle_haystack import NeedleHaystackBenchmark
+    from benchmarks.math_eval import MATHEvaluator
+    from benchmarks.flop_analysis import run_flop_analysis
+except ImportError as e:
+    print(f"Import error: {e}")
+    print(f"Python path: {sys.path}")
+    raise
 
 
 def parse_args():
