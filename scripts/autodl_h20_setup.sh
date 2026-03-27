@@ -103,9 +103,22 @@ pip install ninja
 echo ""
 echo "Step 7: Optional - Flash Attention 2"
 echo "-------------------------------------"
-echo "H20 supports Flash Attention 2. Installing..."
-echo "Note: This may take 10-20 minutes to compile"
-pip install flash-attn==2.3.0 --no-build-isolation || echo "Flash Attention installation failed, continuing without it"
+echo "H20 supports Flash Attention 2, but installation may fail due to network."
+echo "This is OPTIONAL - training works fine without it."
+echo ""
+read -p "Try to install Flash Attention? (y/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "Installing Flash Attention (may take 10-20 minutes)..."
+    pip install flash-attn==2.3.0 --no-build-isolation || {
+        echo ""
+        echo "⚠️ Flash Attention installation failed (likely network issue)."
+        echo "Training will work without it. You can retry later with:"
+        echo "  pip install flash-attn==2.3.0 --no-build-isolation"
+    }
+else
+    echo "Skipping Flash Attention installation."
+fi
 
 echo ""
 echo "Step 8: Verify H20 Installation"

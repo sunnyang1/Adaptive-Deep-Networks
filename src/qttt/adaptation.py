@@ -85,16 +85,16 @@ def compute_attention_with_query(
 def qttt_adapt(
     initial_query: torch.Tensor,
     kv_cache: KVCache,
-    target_positions: torch.Tensor,
+    seq_positions: torch.Tensor,
     distractor_positions: Optional[torch.Tensor] = None,
     num_steps: int = 16,
     learning_rate: float = 0.005,
     projection_head: Optional[nn.Module] = None,
-    targets: Optional[torch.Tensor] = None
+    target_token_ids: Optional[torch.Tensor] = None
 ) -> Tuple[torch.Tensor, List[float]]:
     """
     Query-only Test-Time Training adaptation.
-    
+
     Algorithm from Section 4.4 and Appendix A.1:
     1. Clone query and enable gradients
     2. For each step:
@@ -102,17 +102,17 @@ def qttt_adapt(
        b. Compute margin maximization loss
        c. Update only query parameters
     3. Return adapted query
-    
+
     Args:
         initial_query: Initial query tensor [B, H, k, D] or pseudo-query [D]
         kv_cache: Frozen key-value cache
-        target_positions: Positions of target tokens in context
-        distractor_positions: Positions of distractor tokens
+        seq_positions: Positions of target tokens in the sequence (index into seq dim)
+        distractor_positions: Positions of distractor tokens in the sequence
         num_steps: Number of adaptation steps
         learning_rate: Step size for adaptation
         projection_head: Optional projection to vocab
-        targets: Target token IDs for loss computation
-    
+        target_token_ids: Target token IDs (vocab indices) for margin loss computation
+
     Returns:
         adapted_query: Optimized query
         loss_history: Loss values at each step
@@ -127,20 +127,32 @@ def qttt_adapt(
         attn_output = compute_attention_with_query(query, kv_cache)
         
         # Compute margin maximization loss if projection available
-        if projection_head is not None and targets is not None:
-            # Project to logits
-            logits = projection_head(attn_output)  # [B, H, k, V]
-            
-            # Margin maximization loss
-            target_logits = logits[..., target_positions, :]
-            
+        if projection_head is not None and target_token_ids is not None:
+            # Project to logits: [B, H, k, V]
+            logits = projection_head(attn_output)
+
+            # Gather target logits using vocab indices at sequence positions
+            # seq_positions[i] picks which position in the sequence,
+            # target_token_ids[i] picks which token in the vocab
+            target_logits = logits[
+                torch.arange(logits.size(0), device=logits.device).unsqueeze(1),  # B
+                torch.arange(logits.size(1), device=logits.device).unsqueeze(0),  # H
+                seq_positions.unsqueeze(0).unsqueeze(1).expand(-1, logits.size(1), -1),  # k -> [B, H, k]
+                target_token_ids.unsqueeze(0).unsqueeze(1).expand(-1, logits.size(1), -1)  # [B, H, k]
+            ]
+
             if distractor_positions is not None:
-                distractor_logits = logits[..., distractor_positions, :]
+                distractor_logits = logits[
+                    torch.arange(logits.size(0), device=logits.device).unsqueeze(1),
+                    torch.arange(logits.size(1), device=logits.device).unsqueeze(0),
+                    distractor_positions.unsqueeze(0).unsqueeze(1).expand(-1, logits.size(1), -1),
+                ]
+                # Max over vocab dimension for each distractor position
                 max_distractor = distractor_logits.max(dim=-1, keepdim=True).values
             else:
-                # Use all other positions as distractors
+                # Use all other positions as distractors, max over vocab
                 max_distractor = logits.max(dim=-1, keepdim=True).values
-            
+
             margin = target_logits - max_distractor
             loss = -F.logsigmoid(margin).mean()
         else:
@@ -193,60 +205,59 @@ class QueryOnlyTTT(nn.Module):
         self,
         pseudo_query: torch.Tensor,  # [D]
         kv_cache: KVCache,
-        target_positions: torch.Tensor,
+        seq_positions: torch.Tensor,
         distractor_positions: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, List[float]]:
         """
         Adapt a pseudo-query vector.
-        
+
         Args:
             pseudo_query: Learned pseudo-query [D]
             kv_cache: Frozen KV cache
-            target_positions: Target token positions
-            distractor_positions: Distractor positions
-        
+            seq_positions: Target token positions in the sequence
+            distractor_positions: Distractor positions in the sequence
+
         Returns:
             adapted_query: Optimized pseudo-query
             loss_history: Loss trajectory
         """
         # Reshape pseudo-query from [D] to [1, H, 1, d] for multi-head attention
-        # D = H * d, so reshape to [H, d] then add batch and seq dims
         H = self.num_heads
         d = self.head_dim
         query_reshaped = pseudo_query.view(H, d)  # [H, d]
         query_expanded = query_reshaped.unsqueeze(0).unsqueeze(2)  # [1, H, 1, d]
-        
+
         adapted, losses = qttt_adapt(
             query_expanded,
             kv_cache,
-            target_positions,
+            seq_positions,
             distractor_positions,
             num_steps=self.config.num_steps,
             learning_rate=self.config.learning_rate
         )
-        
+
         # Reshape back to [D]
         adapted = adapted.squeeze(0).squeeze(1)  # [H, d]
         return adapted.view(-1), losses
-    
+
     def adapt_query_projection(
         self,
         queries: torch.Tensor,  # [B, T, D]
         kv_cache: KVCache,
-        target_positions: torch.Tensor,
+        seq_positions: Optional[torch.Tensor] = None,
         distractor_positions: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, List[float]]:
         """
         Adapt query projection matrix.
-        
+
         This allows per-token query modification at higher cost.
-        
+
         Args:
             queries: Query tensor [B, T, D]
             kv_cache: Frozen KV cache
-            target_positions: Target positions
-            distractor_positions: Distractor positions
-        
+            seq_positions: Target positions in the sequence (for margin loss)
+            distractor_positions: Distractor positions in the sequence (for margin loss)
+
         Returns:
             adapted_queries: Optimized queries
             loss_history: Loss trajectory
@@ -255,21 +266,21 @@ class QueryOnlyTTT(nn.Module):
         B, T, D = queries.shape
         queries_mha = queries.view(B, T, self.num_heads, self.head_dim)
         queries_mha = queries_mha.transpose(1, 2)  # [B, H, T, d]
-        
+
         adapted, losses = qttt_adapt(
             queries_mha,
             kv_cache,
-            target_positions,
+            seq_positions,
             distractor_positions,
             num_steps=self.config.num_steps,
             learning_rate=self.config.learning_rate,
             projection_head=self.query_projection if self.query_projection else None
         )
-        
+
         # Reshape back: [B, H, T, d] -> [B, T, D]
         adapted = adapted.transpose(1, 2).contiguous()
         adapted = adapted.view(B, T, D)
-        
+
         return adapted, losses
     
     def compute_flops(
@@ -334,16 +345,20 @@ class AdaptiveInference:
         self,
         hidden_states: torch.Tensor,
         kv_cache: KVCache,
-        reconstruction_loss: Optional[float] = None
+        reconstruction_loss: Optional[float] = None,
+        seq_positions: Optional[torch.Tensor] = None,
+        distractor_positions: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, dict]:
         """
         Conditional forward pass with optional qTTT.
-        
+
         Args:
             hidden_states: Input hidden states
             kv_cache: Frozen KV cache
             reconstruction_loss: For gating decision
-        
+            seq_positions: Target token positions in the sequence (for margin loss)
+            distractor_positions: Distractor token positions in the sequence (for margin loss)
+
         Returns:
             output_states: Possibly adapted hidden states
             metadata: Information about adaptation
@@ -353,7 +368,7 @@ class AdaptiveInference:
             'num_steps': 0,
             'loss_history': []
         }
-        
+
         # Gating decision
         if self.gating is not None and reconstruction_loss is not None:
             should_adapt, num_steps, threshold = self.gating.decide(
@@ -362,12 +377,14 @@ class AdaptiveInference:
         else:
             should_adapt = True
             num_steps = self.qttt.config.num_steps
-        
+
         if should_adapt and num_steps > 0:
             # Perform qTTT adaptation
             adapted_states, losses = self.qttt.adapt_query_projection(
                 hidden_states,
-                kv_cache
+                kv_cache,
+                seq_positions=seq_positions,
+                distractor_positions=distractor_positions
             )
             
             metadata['adapted'] = True

@@ -48,12 +48,28 @@ class FLOPCounter:
         batch: int,
         seq_len: int,
         hidden_dim: int,
-        mlp_ratio: int = 4
+        mlp_ratio: int = 4,
+        use_swiglu: bool = True
     ) -> int:
-        """FLOPs for MLP."""
+        """FLOPs for MLP.
+
+        Args:
+            batch: Batch size
+            seq_len: Sequence length
+            hidden_dim: Hidden dimension
+            mlp_ratio: MLP expansion ratio
+            use_swiglu: If True, use SwiGLU (3 projections); otherwise standard MLP (2 projections)
+
+        Returns:
+            Total FLOPs for the MLP block
+        """
         mlp_dim = hidden_dim * mlp_ratio
-        # Two linear layers
-        return 2 * batch * seq_len * hidden_dim * mlp_dim
+        if use_swiglu:
+            # SwiGLU: gate_proj (D→D_ff) + up_proj (D→D_ff) + down_proj (D_ff→D)
+            return 3 * batch * seq_len * hidden_dim * mlp_dim
+        else:
+            # Standard MLP: two linear layers
+            return 2 * batch * seq_len * hidden_dim * mlp_dim
     
     @staticmethod
     def transformer_layer_flops(

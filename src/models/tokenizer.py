@@ -27,7 +27,7 @@ class SimpleTokenizer:
             if vocab_size != self.tokenizer.vocab_size:
                 # For simplicity, we'll just use a subset or pad
                 pass
-        except:
+        except (OSError, ValueError, RuntimeError) as e:
             # Fallback to character-level tokenizer for testing
             self.tokenizer = None
             self.char_vocab = {chr(i): i for i in range(vocab_size)}

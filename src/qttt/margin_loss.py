@@ -99,6 +99,12 @@ class MarginMaximizationLoss(nn.Module):
         # Compute margin: target - max_distractor
         margin = (target_logits - max_distractor) / self.temperature  # [B, k]
         
+        # Apply hard negative weighting when explicit distractors are provided
+        # This up-weights the margin when distractors are close to the target,
+        # encouraging the model to push harder against difficult negatives.
+        if distractor_positions is not None:
+            margin = margin * self.hard_negative_weight
+        
         # Margin maximization loss: -log(sigmoid(margin))
         loss = -F.logsigmoid(margin).mean()
         

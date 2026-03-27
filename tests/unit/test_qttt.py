@@ -69,13 +69,13 @@ class TestQtttAdapt:
         values = torch.randn(batch, num_heads, seq_len, head_dim)
         kv_cache = KVCache(keys, values)
         
-        target_positions = torch.tensor([5, 10, 15, 20, 25])
+        seq_positions = torch.tensor([5, 10, 15, 20, 25])
         
         # Run adaptation
         adapted_query, loss_history = qttt_adapt(
             initial_query,
             kv_cache,
-            target_positions,
+            seq_positions,
             num_steps=5,
             learning_rate=0.01
         )
@@ -96,12 +96,12 @@ class TestQtttAdapt:
         values = torch.randn(batch, num_heads, seq_len, head_dim)
         kv_cache = KVCache(keys, values)
         
-        target_positions = torch.tensor([10, 20, 30])
+        seq_positions = torch.tensor([10, 20, 30])
         
         _, loss_history = qttt_adapt(
             initial_query,
             kv_cache,
-            target_positions,
+            seq_positions,
             num_steps=10,
             learning_rate=0.05
         )
@@ -121,12 +121,12 @@ class TestQtttAdapt:
         values = torch.randn(batch, num_heads, seq_len, head_dim)
         kv_cache = KVCache(keys, values)
         
-        target_positions = torch.tensor([10, 20, 30])
+        seq_positions = torch.tensor([10, 20, 30])
         
         adapted_query, _ = qttt_adapt(
             initial_query,
             kv_cache,
-            target_positions,
+            seq_positions,
             num_steps=5,
             learning_rate=0.1
         )
@@ -155,12 +155,12 @@ class TestQueryOnlyTTT:
         values = torch.randn(1, 8, 50, 16)
         kv_cache = KVCache(keys, values)
         
-        target_positions = torch.tensor([10, 20, 30])
+        seq_positions = torch.tensor([10, 20, 30])
         
         adapted, losses = module.adapt_pseudo_query(
             pseudo_query,
             kv_cache,
-            target_positions
+            seq_positions
         )
         
         assert adapted.shape == (128,)
@@ -179,12 +179,12 @@ class TestQueryOnlyTTT:
         values = torch.randn(2, 8, 50, 16)
         kv_cache = KVCache(keys, values)
         
-        target_positions = torch.tensor([5, 10, 15])
+        seq_positions = torch.tensor([5, 10, 15])
         
         adapted, losses = module.adapt_query_projection(
             queries,
             kv_cache,
-            target_positions
+            seq_positions
         )
         
         assert adapted.shape == queries.shape

@@ -45,7 +45,7 @@ class MATHEvaluator:
             self.dataset = load_dataset("hendrycks/competition_math", split="test")
             if max_samples:
                 self.dataset = self.dataset.select(range(min(max_samples, len(self.dataset))))
-        except:
+        except (ConnectionError, ValueError, RuntimeError):
             print("Warning: Could not load MATH dataset. Using dummy data.")
             self.dataset = []
     
@@ -144,7 +144,7 @@ class MATHEvaluator:
                 gen_num = float(gen_norm.replace(',', ''))
                 exp_num = float(exp_norm.replace(',', ''))
                 correct = abs(gen_num - exp_num) < 1e-3
-            except:
+            except (ValueError, TypeError):
                 pass
         
         return correct, generated_answer, expected_answer
