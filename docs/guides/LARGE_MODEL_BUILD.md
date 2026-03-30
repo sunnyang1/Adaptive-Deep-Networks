@@ -196,7 +196,7 @@ deepspeed_config = {
 - `src/models/configs.py` - 配置定义
 - `src/models/adaptive_transformer.py` - 模型实现
 - `results/large_model_config.json` - 生成的配置
-- `build_large_model.py` - 构建/分析脚本
+- `scripts/model/build_large_model.py` - 构建/分析脚本
 
 ## 总结
 

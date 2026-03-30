@@ -231,10 +231,10 @@ EXPERIMENT_REGISTRY = {
 python -c "from experiments.core.my_experiment.experiment import MyExperiment; print('OK')"
 
 # Run experiment
-python experiments/run_refactored.py my_experiment
+python experiments/run_experiments_unified.py --exp my_experiment
 
 # Run with config
-python experiments/run_refactored.py my_experiment --config configs/experiments/my_experiment.yaml
+python experiments/run_experiments_unified.py --exp my_experiment --config configs/experiments/my_experiment.yaml
 ```
 
 ## Common Patterns
@@ -315,7 +315,7 @@ if 'RANK' in os.environ:
 ### After
 ```python
 # Use scripts/common/
-from scripts.common import (
+from scripts.training.common import (
     CheckpointManager,      # Safe checkpoint save/load
     compute_loss,           # Shared loss computation
     train_step,             # Shared training step
@@ -385,9 +385,9 @@ When migrating an experiment:
 - [ ] Add `visualize()` method using standard plotting functions
 - [ ] Add `generate_report()` method (optional, base class has default)
 - [ ] Add `main()` function for CLI entry point
-- [ ] Register in `experiments/run_refactored.py`
+- [ ] Register in `experiments/run_experiments_unified.py`
 - [ ] Test import: `python -c "from ... import MyExperiment"`
-- [ ] Test run: `python experiments/run_refactored.py my_experiment`
+- [ ] Test run: `python experiments/run_experiments_unified.py --exp my_experiment`
 - [ ] Update any documentation references
 
 ## Resources

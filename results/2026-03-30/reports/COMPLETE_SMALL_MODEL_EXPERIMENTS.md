@@ -214,9 +214,10 @@ results/
 ### 脚本文件
 ```
 scripts/
-├── build_and_benchmark_small.py          # 模型构建脚本
-├── run_small_experiments.py              # 基础实验脚本
-└── test_turboquant_small.py              # TurboQuant 测试脚本
+├── model/build_and_benchmark_small.py    # 模型构建脚本
+└── experiments/
+    ├── run_small_experiments.py          # 基础实验脚本
+    └── test_turboquant_small.py          # TurboQuant 测试脚本
 ```
 
 ---

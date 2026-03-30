@@ -156,23 +156,23 @@ scripts/
 
 ```bash
 # Old way (multiple scripts)
-python experiments/run_all_experiments.py
-python experiments/run_all_validations.py
+python experiments/run_experiments_unified.py --all
+python experiments/run_experiments_unified.py --category validation
 
 # New way (unified)
-python experiments/run_refactored.py exp1_representation_burial
-python experiments/run_experiments.py --category core
+python experiments/run_experiments_unified.py --exp exp1_representation_burial
+python experiments/run_experiments_unified.py --category core
 ```
 
 ### Training
 
 ```bash
 # Old way (platform-specific)
-python scripts/train_model.py
-python scripts/train_h20.py
+python scripts/training/train_model.py
+python scripts/training/train_h20.py
 
 # New way (unified with auto-detection)
-python scripts/train_refactored.py --model-size medium --distributed
+python scripts/training/train_refactored.py --model-size medium --distributed
 ```
 
 ### Configuration
@@ -182,7 +182,7 @@ python scripts/train_refactored.py --model-size medium --distributed
 # Edit run_exp1.py to change num_samples
 
 # New way (YAML config)
-python experiments/run_refactored.py exp1 --config configs/experiments/exp1.yaml
+python experiments/run_experiments_unified.py --exp exp1 --config configs/experiments/exp1.yaml
 ```
 
 ## Benefits Summary

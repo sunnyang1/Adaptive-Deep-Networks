@@ -350,7 +350,7 @@ print(f'KV cache compressed: {model.kv_cache_compressed}')
 
 ```bash
 # 运行长上下文检索测试
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
     --benchmark needle \
     --context-lengths 4096,16384,65536,131072 \
     --model-size small \
@@ -370,7 +370,7 @@ python scripts/run_benchmarks.py \
 
 ```bash
 # 运行数学推理测试
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
     --benchmark math \
     --model-size small \
     --use-turboquant \
@@ -496,11 +496,11 @@ print(f'Target: >5.7x')
 
 ```bash
 # 运行所有测试并生成报告
-python scripts/run_all_experiments.py \
+python experiments/run_experiments_unified.py --all \
     --output results/turboquant_full_report.json
 
 # 生成可视化
-python scripts/visualize_results.py \
+python scripts/experiments/paper_metrics_summary.py \
     --input results/turboquant_full_report.json \
     --output docs/turboquant_results/
 ```

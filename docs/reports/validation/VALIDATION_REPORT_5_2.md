@@ -437,7 +437,7 @@ experiments/real_model/
     ├── __init__.py
     └── needle_dataset.py
 
-scripts/
+scripts/evaluation/
 └── run_real_validation.sh
 ```
 
@@ -526,16 +526,16 @@ experiments/run_experiments.py  # Replaces 3 separate scripts
 **Usage:**
 ```bash
 # Run all experiments
-python experiments/run_experiments.py --all
+python experiments/run_experiments_unified.py --all
 
 # Run specific category
-python experiments/run_experiments.py --category core
+python experiments/run_experiments_unified.py --category core
 
 # List available experiments
-python experiments/run_experiments.py --list
+python experiments/run_experiments_unified.py --list
 
 # Dry run
-python experiments/run_experiments.py --dry-run --all
+python experiments/run_experiments_unified.py --dry-run --all
 ```
 
 #### 5. Unified Training Script
@@ -659,19 +659,19 @@ scripts/common/
 
 ```bash
 # Run refactored experiment
-python experiments/run_refactored.py exp1_representation_burial
+python experiments/run_experiments_unified.py --exp exp1_representation_burial
 
 # Run with custom config
-python experiments/run_refactored.py exp1 --config configs/experiments/exp1.yaml
+python experiments/run_experiments_unified.py --exp exp1 --config configs/experiments/exp1.yaml
 
 # List available experiments
-python experiments/run_refactored.py --list
+python experiments/run_experiments_unified.py --list
 
 # Unified training (works on all platforms)
-python scripts/train_refactored.py --model-size medium --distributed
+python scripts/training/train_refactored.py --model-size medium --distributed
 
 # Quick test mode
-python experiments/run_refactored.py exp1 --quick
+python experiments/run_experiments_unified.py --exp exp1 --quick
 ```
 
 ### Migration Status
@@ -757,17 +757,17 @@ configs/experiments/
 
 ```bash
 # List all available experiments
-python experiments/run_refactored.py --list
+python experiments/run_experiments_unified.py --list
 # Output: 12 experiments (6 full names + 6 short names)
 
 # Run specific experiment
-python experiments/run_refactored.py exp3_gradient_flow
+python experiments/run_experiments_unified.py --exp exp3_gradient_flow
 
 # Quick test mode
-python experiments/run_refactored.py exp1 --quick
+python experiments/run_experiments_unified.py --exp exp1 --quick
 
 # Run with custom config
-python experiments/run_refactored.py exp2 --config configs/experiments/exp2.yaml
+python experiments/run_experiments_unified.py --exp exp2 --config configs/experiments/exp2.yaml
 ```
 
 ### Key Features of Migrated Experiments

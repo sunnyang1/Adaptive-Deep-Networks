@@ -72,7 +72,7 @@ python core/exp6_auxiliary/run_exp6.py
 python run_experiments_unified.py --exp val_turboquant
 
 # 或直接运行
-python ../scripts/validate_turboquant_setup.py
+python ../scripts/experiments/validate_turboquant_setup.py
 ```
 
 ## 输出位置

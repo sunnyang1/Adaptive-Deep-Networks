@@ -123,7 +123,7 @@ results/
 
 ### 脚本文件
 ```
-scripts/
+scripts/experiments/
 ├── paper_metrics_summary.py              # 论文指标汇总脚本
 ├── test_small_model_datasets.py          # 数据集测试框架
 ├── run_small_model_experiments_fast.py   # Small Model 快速实验
@@ -173,13 +173,13 @@ scripts/
 
 ```bash
 # Small Model 验证实验
-python scripts/run_small_model_experiments_fast.py
+python scripts/experiments/run_small_model_experiments_fast.py
 
 # 论文指标汇总
-python scripts/paper_metrics_summary.py
+python scripts/experiments/paper_metrics_summary.py
 
 # 数据集测试框架
-python scripts/test_small_model_datasets.py
+python scripts/experiments/test_small_model_datasets.py
 ```
 
 ---

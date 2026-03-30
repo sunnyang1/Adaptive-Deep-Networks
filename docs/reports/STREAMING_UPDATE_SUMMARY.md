@@ -52,10 +52,10 @@
 
 ```bash
 # 虚拟数据测试
-python scripts/train_streaming.py --model-size small --max-steps 1000
+python scripts/training/train_streaming.py --model-size small --max-steps 1000
 
 # FineWeb 数据集
-python scripts/train_streaming.py \
+python scripts/training/train_streaming.py \
     --model-size medium \
     --dataset fineweb \
     --dataset-config sample-10BT \

@@ -32,12 +32,12 @@ conda activate adn
 
 ```bash
 # Small 模型 - 虚拟数据（测试用）
-python scripts/train_streaming.py \
+python scripts/training/train_streaming.py \
     --model-size small \
     --max-steps 10000
 
 # Medium 模型 - FineWeb 数据集
-python scripts/train_streaming.py \
+python scripts/training/train_streaming.py \
     --model-size medium \
     --dataset fineweb \
     --dataset-config sample-10BT \
@@ -134,7 +134,7 @@ export HF_DATASETS_IN_MEMORY_MAX_SIZE=10000000000  # 10GB
 
 ```bash
 # 只保留最新 checkpoint
-python scripts/train_streaming.py \
+python scripts/training/train_streaming.py \
     --model-size medium \
     --save-every 10000 \
     --max-steps 100000
@@ -214,7 +214,7 @@ export HTTPS_PROXY=http://your-proxy:port
 
 ```bash
 # 启用 BF16 (H20 支持)
-python scripts/train_streaming.py \
+python scripts/training/train_streaming.py \
     --model-size medium \
     --mixed-precision
 ```
@@ -223,7 +223,7 @@ python scripts/train_streaming.py \
 
 ```bash
 # 自定义 warmup 步数
-python scripts/train_streaming.py \
+python scripts/training/train_streaming.py \
     --model-size medium \
     --warmup-steps 5000
 ```
@@ -235,7 +235,7 @@ python scripts/train_streaming.py \
 ### 场景 1: 快速验证 (1天)
 
 ```bash
-python scripts/train_streaming.py \
+python scripts/training/train_streaming.py \
     --model-size small \
     --dataset fineweb \
     --dataset-config sample-10BT \

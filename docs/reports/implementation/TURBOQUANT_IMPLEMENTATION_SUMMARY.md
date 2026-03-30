@@ -165,15 +165,15 @@ should_adapt, qttt_steps, think_tokens, threshold = controller.decide(
 ### 快速验证
 ```bash
 # 1. 验证安装
-PYTHONPATH=/Users/michelleye/Documents/Adaptive-Deep-Networks python scripts/validate_turboquant_setup.py
+PYTHONPATH=/Users/michelleye/Documents/Adaptive-Deep-Networks python scripts/experiments/validate_turboquant_setup.py
 
 # 2. 运行单元测试
 python -m pytest tests/unit/test_turboquant.py -v
 python -m pytest tests/unit/test_polar_components.py -v
 
 # 3. 运行基准测试
-python scripts/run_benchmarks.py --benchmark needle --use-turboquant
-python scripts/run_benchmarks.py --benchmark math --use-polar-qttt
+python scripts/evaluation/run_benchmarks.py --benchmark needle --use-turboquant
+python scripts/evaluation/run_benchmarks.py --benchmark math --use-polar-qttt
 ```
 
 ---
@@ -221,7 +221,7 @@ python scripts/run_benchmarks.py --benchmark math --use-polar-qttt
   TURBOQUANT_IMPLEMENTATION_SUMMARY.md (本文件)
   
 脚本:
-  scripts/validate_turboquant_setup.py  (~200 行)
+  scripts/experiments/validate_turboquant_setup.py  (~200 行)
 ```
 
 **总计**: ~3,500 行新增/更新代码

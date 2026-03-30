@@ -140,29 +140,29 @@ visualization:
 
 ```bash
 # List all experiments
-python experiments/run_refactored.py --list
+python experiments/run_experiments_unified.py --list
 
 # Run specific experiment
-python experiments/run_refactored.py exp1_representation_burial
+python experiments/run_experiments_unified.py --exp exp1_representation_burial
 
 # Run with custom config
-python experiments/run_refactored.py exp1 --config configs/experiments/exp1.yaml
+python experiments/run_experiments_unified.py --exp exp1 --config configs/experiments/exp1.yaml
 
 # Quick test mode (reduced samples)
-python experiments/run_refactored.py exp1 --quick
+python experiments/run_experiments_unified.py --exp exp1 --quick
 ```
 
 ### Training
 
 ```bash
 # Works on all platforms (AutoDL, Lambda, local)
-python scripts/train_refactored.py --model-size medium --distributed
+python scripts/training/train_refactored.py --model-size medium --distributed
 
 # Single GPU
-python scripts/train_refactored.py --model-size small
+python scripts/training/train_refactored.py --model-size small
 
 # Quick test
-python scripts/train_refactored.py --model-size small --quick
+python scripts/training/train_refactored.py --model-size small --quick
 ```
 
 ### Accessing Shared Modules
@@ -194,7 +194,7 @@ See `experiments/MIGRATION_GUIDE.md` for step-by-step instructions.
 2. Create `experiment.py` extending `CoreExperiment`
 3. Implement `run()`, `visualize()`, `generate_report()`
 4. Add CLI entry point
-5. Register in `experiments/run_refactored.py`
+5. Register in `experiments/run_experiments_unified.py`
 
 ### For Training Scripts
 

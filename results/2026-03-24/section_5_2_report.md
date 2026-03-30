@@ -99,10 +99,10 @@
 ### 运行命令
 ```bash
 # 使用 GPU
-python scripts/eval_5_2.py --model-size medium --device cuda
+python scripts/evaluation/eval_5_2.py --model-size medium --device cuda
 
 # 使用 CPU (需要大量内存)
-python scripts/eval_5_2.py --model-size medium --device cpu
+python scripts/evaluation/eval_5_2.py --model-size medium --device cpu
 ```
 
 ## 结论

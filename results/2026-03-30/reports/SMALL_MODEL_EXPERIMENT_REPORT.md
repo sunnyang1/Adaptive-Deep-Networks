@@ -189,8 +189,8 @@ Total                  2.21B         100%
 ## 附录: 实验文件
 
 - **结果 JSON**: `results/small_model_experiments.json`
-- **构建脚本**: `scripts/build_and_benchmark_small.py`
-- **实验脚本**: `scripts/run_small_experiments.py`
+- **构建脚本**: `scripts/model/build_and_benchmark_small.py`
+- **实验脚本**: `scripts/experiments/run_small_experiments.py`
 
 ---
 

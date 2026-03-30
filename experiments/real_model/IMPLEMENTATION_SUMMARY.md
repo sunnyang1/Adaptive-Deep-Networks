@@ -142,12 +142,12 @@ python experiments/real_model/validator.py \
 
 ### 无检查点测试（随机权重）
 ```bash
-bash scripts/run_real_validation.sh
+bash scripts/evaluation/run_real_validation.sh
 ```
 
 ### 有检查点测试
 ```bash
-bash scripts/run_real_validation.sh checkpoints/adb_medium.pt
+bash scripts/evaluation/run_real_validation.sh checkpoints/adb_medium.pt
 ```
 
 ### Python API

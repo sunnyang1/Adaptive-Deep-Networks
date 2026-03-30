@@ -92,13 +92,13 @@ load_dataset('lukaemon/bbh', 'boolean_expressions', split='test')
 cd /root/autodl-tmp/adaptive-deep-networks
 
 # 使用 Medium (8.7B) 模型
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size medium \
   --benchmark math \
   --output results/math_medium.json
 
 # 使用 Small (2.2B) 模型
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size small \
   --benchmark math \
   --output results/math_small.json
@@ -116,7 +116,7 @@ python scripts/run_benchmarks.py \
 #### 实验 2: GSM8K 数据集验证
 
 ```bash
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size medium \
   --benchmark gsm8k \
   --output results/gsm8k_medium.json
@@ -140,14 +140,14 @@ python scripts/run_benchmarks.py \
 
 ```bash
 # 运行 NIH 测试（先测试较短上下文以节省时间）
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size small \
   --benchmark needle_haystack \
   --context-lengths 1000 4000 16000 32000 \
   --output results/nih_small.json
 
 # 如果短上下文结果合理，再测试长上下文
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size small \
   --benchmark needle_haystack \
   --context-lengths 64000 128000 256000 \
@@ -172,7 +172,7 @@ python scripts/run_benchmarks.py \
 #### 实验 4: LongBench-v2 验证
 
 ```bash
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size medium \
   --benchmark longbench_v2 \
   --output results/longbench_medium.json
@@ -208,7 +208,7 @@ python src/benchmarks/flop_analysis.py \
 
 ```bash
 # 验证 gating 决策与 oracle 的一致性
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size medium \
   --benchmark gating_recovery \
   --output results/gating_recovery.json
@@ -220,7 +220,7 @@ python scripts/run_benchmarks.py \
 
 ```bash
 # 完整消融实验需要较长时间
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size medium \
   --benchmark ablation \
   --output results/ablation_medium.json
@@ -275,17 +275,17 @@ Benchmark: MATH
 accelerate launch --use_fp16 --gradient_checkpointing ...
 
 # 方案 2: 减小 batch size
-python scripts/run_benchmarks.py --batch-size 1 ...
+python scripts/evaluation/run_benchmarks.py --batch-size 1 ...
 
 # 方案 3: 使用 8-bit 量化
-python scripts/run_benchmarks.py --load-in-8bit ...
+python scripts/evaluation/run_benchmarks.py --load-in-8bit ...
 ```
 
 ### Q2: NIH 长上下文测试太慢
 
 ```bash
 # 先测试短上下文 (1K-16K)，确认方向正确后再测长上下文
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --benchmark needle_haystack \
   --context-lengths 1000 4000 16000 \
   --num-depths 5  # 减少测试深度点 (默认10)
@@ -364,7 +364,7 @@ model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
 
 ```bash
 # 汇总所有实验结果
-python scripts/summarize_results.py \
+python scripts/evaluation/summarize_results.py \
   --results-dir results/ \
   --output VERIFICATION_RESULTS.md
 ```
@@ -428,7 +428,7 @@ python -m pytest tests/ -v --tb=short
 # 5. 开始 P0 验证
 echo "[4/4] 开始 P0 核心验证..."
 echo "  运行 MATH 验证 (Small 模型)..."
-python scripts/run_benchmarks.py \
+python scripts/evaluation/run_benchmarks.py \
   --model-size small \
   --benchmark math \
   --output results/math_small.json
@@ -454,26 +454,26 @@ echo "结果目录: $RESULTS_DIR"
 
 # P0: MATH
 echo "[P0-1] MATH Small..."
-python scripts/run_benchmarks.py --model-size small --benchmark math --output $RESULTS_DIR/math_small.json
+python scripts/evaluation/run_benchmarks.py --model-size small --benchmark math --output $RESULTS_DIR/math_small.json
 echo "[P0-2] MATH Medium..."
-python scripts/run_benchmarks.py --model-size medium --benchmark math --output $RESULTS_DIR/math_medium.json
+python scripts/evaluation/run_benchmarks.py --model-size medium --benchmark math --output $RESULTS_DIR/math_medium.json
 
 # P0: GSM8K
 echo "[P0-3] GSM8K Small..."
-python scripts/run_benchmarks.py --model-size small --benchmark gsm8k --output $RESULTS_DIR/gsm8k_small.json
+python scripts/evaluation/run_benchmarks.py --model-size small --benchmark gsm8k --output $RESULTS_DIR/gsm8k_small.json
 echo "[P0-4] GSM8K Medium..."
-python scripts/run_benchmarks.py --model-size medium --benchmark gsm8k --output $RESULTS_DIR/gsm8k_medium.json
+python scripts/evaluation/run_benchmarks.py --model-size medium --benchmark gsm8k --output $RESULTS_DIR/gsm8k_medium.json
 
 # P1: NIH (短上下文先跑)
 echo "[P1-1] NIH Short (1K-16K)..."
-python scripts/run_benchmarks.py --model-size small --benchmark needle_haystack --context-lengths 1000 4000 16000 --output $RESULTS_DIR/nih_short.json
+python scripts/evaluation/run_benchmarks.py --model-size small --benchmark needle_haystack --context-lengths 1000 4000 16000 --output $RESULTS_DIR/nih_short.json
 
 echo "[P1-2] NIH Long (32K-128K)..."
-python scripts/run_benchmarks.py --model-size small --benchmark needle_haystack --context-lengths 32000 64000 128000 --output $RESULTS_DIR/nih_long.json
+python scripts/evaluation/run_benchmarks.py --model-size small --benchmark needle_haystack --context-lengths 32000 64000 128000 --output $RESULTS_DIR/nih_long.json
 
 # P1: LongBench-v2
 echo "[P1-3] LongBench-v2..."
-python scripts/run_benchmarks.py --model-size medium --benchmark longbench_v2 --output $RESULTS_DIR/longbench_medium.json
+python scripts/evaluation/run_benchmarks.py --model-size medium --benchmark longbench_v2 --output $RESULTS_DIR/longbench_medium.json
 
 # P2: FLOP
 echo "[P2-1] FLOP Analysis..."

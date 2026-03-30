@@ -215,7 +215,7 @@ results/small_model_paper_experiments/
 
 ### 实验脚本
 ```
-scripts/
+scripts/experiments/
 ├── run_small_model_experiments_fast.py    # 快速实验脚本
 └── run_small_model_paper_experiments.py   # 完整实验脚本 (需 GPU)
 ```

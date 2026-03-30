@@ -511,7 +511,7 @@ We conducted comprehensive validation of the Small (2.2B) model architecture, ve
 All validation artifacts, including experiment scripts and results, are available at:
 - `results/small_model_paper_experiments/`: Complete validation data
 - `results/paper_metrics/`: Paper metrics summary and comparison tables
-- `scripts/`: Reproducible experiment scripts
+- `scripts/experiments/`: Reproducible experiment scripts
 
 TurboQuant compression is the enabling technology that transforms depth-scaling from theoretically attractive to economically dominant. The strict depth-priority policy under hardware acceleration achieves Pareto frontier redefinition across accuracy, latency, and memory efficiency.
 
