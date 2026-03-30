@@ -1,49 +1,147 @@
 """
-TurboQuant: Data-Oblivious Extreme Compression
+TurboQuant: Unified Extreme Compression API
 
-Based on: TurboQuant (ICLR 2026)
-Two-stage quantization pipeline:
-1. PolarQuant: (b-1)-bit compression via random Hadamard + polar coordinates
-2. QJL: 1-bit Johnson-Lindenstrauss residual correction
+Simple, clean interface for all quantization modes.
 
-Key Features:
-- Data-oblivious: No calibration data, no fine-tuning required
-- 6×+ memory reduction with zero accuracy loss
-- 8× throughput increase on Tensor Cores via 4-bit INT kernels
+Quick Start:
+    >>> from src.turboquant import TurboQuant
+    
+    >>> # No compression (FP16)
+    >>> quant = TurboQuant('fp16')
+    
+    >>> # INT8 quantization (2x compression)
+    >>> quant = TurboQuant('int8')
+    
+    >>> # TurboQuant 4-bit (3x compression)
+    >>> quant = TurboQuant('tq4')
+    >>> quant.fit(sample_keys, sample_values)  # Fit on data
+    >>> compressed = quant.compress_kv(keys, values)
+    
+    >>> # With FlashAttention
+    >>> quant = TurboQuant('tq4_flash')
+
+Recommended Configs:
+    - 'fp16': No compression (default)
+    - 'int8': 2x compression, near lossless
+    - 'tq4': 3x compression (4B+ models)
+    - 'tq3': 4x compression (4B+ models)
+
+Full API:
+    >>> quant = TurboQuant('tq4', head_dim=128, device='cuda')
+    >>> 
+    >>> # Fit quantizers
+    >>> quant.fit(sample_keys, sample_values)
+    >>> # Or use Beta distribution for RHT
+    >>> quant.fit_beta()
+    >>> 
+    >>> # Compress/decompress
+    >>> compressed = quant.compress_kv(keys, values)
+    >>> keys_deq, values_deq = quant.decompress_kv(compressed)
+    >>> 
+    >>> # Memory stats
+    >>> stats = quant.memory_stats(seq_len=32768)
+    >>> print(f"Saving: {stats['memory_saved']:.1f}%")
 """
 
-from .polar_quant import PolarQuant, CartesianToPolar
-from .qjl import QJLCompressor, QJLDecompressor
-from .turbo_quant import TurboQuantPipeline, TurboQuantConfig
-from .tensor_core import TensorCoreKernel, INT4Linear
+# ============================================================================
+# Unified API (Recommended)
+# ============================================================================
 
-# MNN-inspired improvements
+from .core import (
+    TurboQuant,
+    TurboQuantConfig,
+    QuantMode,
+    create_quantizer,
+    RECOMMENDED_CONFIGS,
+    quantize_kv,
+)
+
+# ============================================================================
+# Quantizers (Advanced)
+# ============================================================================
+
+from .core import (
+    LloydMaxQuantizer,
+    INT8Quantizer,
+    FP16Quantizer,
+)
+
+# ============================================================================
+# Legacy API (Backward Compatibility)
+# ============================================================================
+
+from .polar_quant import (
+    PolarQuant,
+    CartesianToPolar,
+    HadamardTransform,
+)
+
+from .qjl import (
+    QJLCompressor,
+    QJLDecompressor,
+    BatchQJL,
+)
+
+from .turbo_quant import (
+    TurboQuantPipeline,
+    TurboQuantConfig as LegacyTurboQuantConfig,
+)
+
+from .tensor_core import (
+    TensorCoreKernel,
+    INT4Linear,
+)
+
+# ============================================================================
+# MNN-Inspired Improvements
+# ============================================================================
+
 from .mnn_improved import (
     MNNTurboQuantConfig,
     MNNTurboQuantCompressor,
     AttentionMode,
     KVQuantMode,
-    LloydMaxQuantizer,
     create_mnn_turboquant,
-    CONFIG_RECOMMENDATIONS,
+    CONFIG_RECOMMENDATIONS as MNN_RECOMMENDATIONS,
 )
 
+# ============================================================================
+# Exports
+# ============================================================================
+
 __all__ = [
-    # Original TurboQuant
+    # Unified API (New - Recommended)
+    'TurboQuant',
+    'TurboQuantConfig',
+    'QuantMode',
+    'create_quantizer',
+    'RECOMMENDED_CONFIGS',
+    'quantize_kv',
+    
+    # Quantizers
+    'LloydMaxQuantizer',
+    'INT8Quantizer',
+    'FP16Quantizer',
+    
+    # Legacy API (Backward Compatibility)
     'PolarQuant',
     'CartesianToPolar',
+    'HadamardTransform',
     'QJLCompressor',
     'QJLDecompressor',
+    'BatchQJL',
     'TurboQuantPipeline',
-    'TurboQuantConfig',
+    'LegacyTurboQuantConfig',
     'TensorCoreKernel',
     'INT4Linear',
-    # MNN-inspired improvements
+    
+    # MNN-Inspired
     'MNNTurboQuantConfig',
     'MNNTurboQuantCompressor',
     'AttentionMode',
     'KVQuantMode',
-    'LloydMaxQuantizer',
     'create_mnn_turboquant',
-    'CONFIG_RECOMMENDATIONS',
+    'MNN_RECOMMENDATIONS',
 ]
+
+__version__ = '2.0.0'
