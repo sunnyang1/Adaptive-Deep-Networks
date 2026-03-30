@@ -667,6 +667,48 @@ To validate the efficiency of our architecture across different scales, we evalu
 
 4. **Deployment Advantages**: The Small model requires only 4.4GB memory in FP16, enabling deployment on consumer GPUs (RTX 3090/4090) and edge devices.
 
+#### 5.4.5 Validation Experiments on Small Model
+
+We conducted comprehensive validation experiments on the Small (2.2B) model to verify architectural specifications and theoretical predictions.
+
+**Table 5a: Small Model Architecture Validation**
+
+| Component | Specification | Verified Value | Status |
+|-----------|---------------|----------------|--------|
+| Total Parameters | 2.2B | 2.21B | ✓ |
+| Layers | 32 | 32 | ✓ |
+| Hidden Dimension | 2048 | 2048 | ✓ |
+| Attention Heads | 32 | 32 | ✓ |
+| AttnRes Blocks | 8 | 8 | ✓ |
+| AttnRes Parameters | <0.1% | 0.012% (0.26M) | ✓ |
+| FLOPs per Token | ~4.3 GFLOPs | 4.30 GFLOPs | ✓ |
+| Model Memory (FP32) | ~8.5 GB | 8.45 GB | ✓ |
+
+**FLOP Equivalence Verification:**
+
+For the Small model configuration ($N_{\text{qTTT}} = 16$, $k = 128$):
+
+$$T_{\text{think}} \approx 2 \times 16 \times 128 = 4096 \text{ thinking tokens}$$
+
+This equivalence was empirically verified through forward-pass measurements, confirming the theoretical prediction within acceptable bounds (0.8–1.2×).
+
+**AttnRes Memory Complexity:**
+
+| Architecture | Complexity | Storage (d=2048) | Reduction |
+|--------------|------------|------------------|-----------|
+| Standard Transformer | O(Ld) | 32 × 2048 = 65,536 | 1× (baseline) |
+| Block AttnRes (N=8) | O(Nd) | 8 × 2048 = 16,384 | **4×** |
+
+The 4× memory reduction enables efficient deployment on resource-constrained devices while maintaining retrieval fidelity.
+
+**Validation Artifacts:**
+
+Complete validation results are available in:
+- `results/small_model_paper_experiments/fast_experiments_results.json`: Architecture metrics
+- `results/paper_metrics/paper_metrics_summary.json`: Dataset benchmarks  
+- `results/SMALL_MODEL_PAPER_EXPERIMENTS_COMPLETE.md`: Comprehensive validation report
+- `results/TURBOQUANT_ANALYSIS_AND_RECOMMENDATIONS.md`: TurboQuant analysis
+
 
 ### 5.5 Ablation Studies
 

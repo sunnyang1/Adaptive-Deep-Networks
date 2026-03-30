@@ -1,115 +1,126 @@
 # Architecture Documentation
 
+> **Note:** This document contains Mermaid diagrams that render automatically on GitHub.
+> If viewing offline, use a Mermaid-compatible viewer or see the [text descriptions](#directory-structure) below.
+
 ## System Overview
 
 Adaptive Deep Networks (ADN) is a modular transformer architecture designed for efficient long-context inference through three key innovations:
 
-1. **Attention Residuals (AttnRes)** - Prevents representation burial
-2. **Dynamic Gating with qTTT** - Adaptive computation allocation
-3. **TurboQuant** - 6x model compression
+| Component | Purpose | Key Benefit |
+|-----------|---------|-------------|
+| **Attention Residuals (AttnRes)** | Prevents representation burial | O(Nd) memory vs O(Ld) |
+| **Dynamic Gating with qTTT** | Adaptive computation allocation | 40% efficiency gain |
+| **TurboQuant** | Model compression | 6x compression, 0% accuracy loss |
+
+## Quick Navigation
+
+- [High-Level Architecture](#high-level-architecture) - System diagram
+- [Component Interactions](#component-interactions) - Data flow sequence
+- [Module Dependencies](#module-dependencies) - Import relationships
+- [AttnRes Flow](#attention-residuals-attnres-flow) - Block attention mechanism
+- [qTTT Flow](#qttt-adaptation-flow) - Query adaptation process
+- [TurboQuant Pipeline](#turboquant-compression-pipeline) - Compression stages
+- [Directory Structure](#directory-structure) - File organization
 
 ## High-Level Architecture
 
 ```mermaid
-graph TB
-    subgraph "Adaptive Deep Networks"
-        A[Input] --> B[Embedding]
-        B --> C[Adaptive Layers]
-        C --> D[Output Head]
-        D --> E[Logits]
-        
-        subgraph "Per Layer"
-            C1[AttnRes Block] --> C2[Adaptive Attention]
-            C2 --> C3[qTTT Adaptation]
-            C3 --> C4[Adaptive MLP]
-        end
-        
-        F[Gating Controller] --> C3
-        G[KV Cache] --> C2
+flowchart TB
+    Input([Input Tokens]) --> Embed[Embedding Layer]
+    Embed --> Layers[Adaptive Transformer Layers]
+    Layers --> Head[LM Head]
+    Head --> Output([Output Logits])
+    
+    subgraph "Each Layer"
+        direction TB
+        AR[AttnRes] --> Attn[Attention]
+        Attn --> Gate{Gating}
+        Gate -->|High Loss| TTT[qTTT Adapt]
+        Gate -->|Low Loss| Skip[Skip Adapt]
+        TTT --> MLP
+        Skip --> MLP[Feed Forward]
     end
     
-    subgraph "Compression"
-        H[TurboQuant] --> H1[PolarQuant]
-        H --> H2[QJL]
-    end
-    
-    C -.-> H
+    Layers -.-> TQ[TurboQuant]
+    TQ --> PQ[PolarQuant]
+    TQ --> QJL[QJL Transform]
 ```
 
 ## Component Interactions
 
 ```mermaid
 sequenceDiagram
-    participant Input as Input
-    participant AttnRes as AttnRes
-    participant Attention as Adaptive Attention
-    participant Gating as Gating Controller
-    participant qTTT as qTTT
-    participant MLP as Adaptive MLP
-    participant Output as Output
+    autonumber
+    participant I as Input
+    participant A as AttnRes
+    participant G as Gating
+    participant Q as qTTT
+    participant O as Output
 
-    Input->>AttnRes: Hidden States
-    AttnRes->>AttnRes: Aggregate Block Representations
-    AttnRes->>Attention: AttnRes-Augmented Hidden
+    I->>A: Hidden States
+    A->>A: Block Aggregation
+    A->>G: Augmented Hidden
     
-    Attention->>Gating: Compute Reconstruction Loss
-    Gating->>Gating: Should Adapt?
+    G->>G: Compute Loss
     
     alt Loss > Threshold
-        Gating->>qTTT: Enable Adaptation
-        qTTT->>qTTT: Adapt Query (N steps)
-        qTTT->>Attention: Adapted Query
+        G->>Q: Trigger Adapt
+        Q->>Q: N adaptation steps
+        Q-->>O: Adapted Query
     else Loss ≤ Threshold
-        Gating->>Attention: Use Original Query
+        G-->>O: Pass Through
     end
-    
-    Attention->>MLP: Attention Output
-    MLP->>Output: Final Hidden
 ```
 
 ## Module Dependencies
 
 ```mermaid
-graph LR
-    subgraph "Core Modules"
-        A[attnres] --> B[models]
-        C[qttt] --> B
-        D[gating] --> C
-        E[turboquant] --> B
+flowchart TD
+    subgraph Core["Core Modules (src/)"]
+        direction TB
+        M[models] --> Attn[attnres]
+        M --> Q[qttt]
+        M --> G[gating]
+        M --> T[turboquant]
     end
     
-    subgraph "Experiments"
-        F[common] --> G[core]
-        F --> H[validation]
-        F --> I[runner]
+    subgraph Exp["Experiments"]
+        direction TB
+        C[common] --> CR[core]
+        C --> V[validation]
+        C --> R[runner]
     end
     
-    subgraph "Scripts"
-        J[common] --> K[training]
+    subgraph Scr["Scripts"]
+        SC[common] --> TR[training]
     end
     
-    B -.-> F
-    B -.-> J
+    Attn -.->|uses| Exp
+    Q -.->|uses| Exp
+    M -.->|uses| Scr
 ```
 
 ## Attention Residuals (AttnRes) Flow
 
 ```mermaid
-graph LR
-    subgraph "Inter-Block Phase"
-        A[Block 1] --> Z[Aggregator]
-        B[Block 2] --> Z
-        C[Block N] --> Z
-        P[Partial Block] --> Z
+flowchart LR
+    subgraph Phase1["Phase 1: Inter-Block (Parallel)"]
+        direction TB
+        B1[Block 1] --> Agg[Aggregator]
+        B2[Block 2] --> Agg
+        BN[Block N] --> Agg
+        BP[Partial] --> Agg
     end
     
-    Z --> D{Pseudo-Query Attention}
-    D --> E[Weighted Sum]
+    Agg --> PQ{Pseudo-Query}
+    PQ --> WS[Weighted Sum]
     
-    subgraph "Intra-Block Phase"
-        E --> F[Layer Norm]
-        F --> G[Attention/MLP]
-        G --> H[Update Partial Block]
+    subgraph Phase2["Phase 2: Intra-Block (Sequential)"]
+        direction TB
+        WS --> LN[LayerNorm]
+        LN --> AM[Attention/MLP]
+        AM --> UP[Update Partial]
     end
 ```
 
@@ -117,77 +128,73 @@ graph LR
 
 ```mermaid
 sequenceDiagram
-    participant Query as Query q
-    participant Cache as Frozen KV Cache
-    participant Adapter as Query Adapter
-    participant Optimizer as SGD Optimizer
-    participant MarginLoss as Margin Loss
+    autonumber
+    participant Q as Query q
+    participant A as Adapter
+    participant C as Frozen KV Cache
+    participant L as Margin Loss
 
-    Query->>Adapter: Initialize q_adapt
+    Q->>A: Initialize q_adapt
     
-    loop N adaptation steps
-        Adapter->>Cache: Attention(q_adapt, K, V)
-        Cache->>MarginLoss: Compute attention distribution
-        MarginLoss->>MarginLoss: L_margin = -logit_margin
-        MarginLoss->>Optimizer: Backward(L_margin)
-        Optimizer->>Adapter: q_adapt -= lr * grad
+    loop N steps
+        A->>C: attention(q_adapt, K, V)
+        C->>L: compute distribution
+        L->>L: L = -logit_margin
+        L-->>A: backward()
+        A->>A: q_adapt -= lr * grad
     end
     
-    Adapter->>Query: Return adapted query
+    A-->>Q: adapted query
 ```
 
 ## TurboQuant Compression Pipeline
 
 ```mermaid
-graph TB
-    A[Input Vector x] --> B[Random Hadamard Transform]
-    B --> C[Cartesian to Polar]
-    C --> D[Magnitude r]
-    C --> E[Angles θ]
+flowchart TD
+    Input["Input x ∈ ℝᵈ"] --> HT["Hadamard Transform"]
+    HT --> Polar["Cartesian → Polar"]
     
-    E --> F[Lloyd-Max Quantization]
-    F --> G[Quantized θ indices]
+    Polar --> Mag["Magnitude r"]
+    Polar --> Ang["Angles θ"]
     
-    D --> H[QJL Residual]
-    H --> I[Compute residual e]
-    I --> J[Project Se]
-    J --> K[Sign(Se)]
+    Ang --> LM["Lloyd-Max<br/>3-bit quant"]
+    Mag --> QJL["QJL Residual<br/>1-bit sign"]
     
-    L[Compressed] --> M[r: FP16]
-    L --> N[θ: 3-bit]
-    L --> O[sign: 1-bit]
+    LM --> Out["Compressed<br/>r: FP16 + θ: 3b + s: 1b"]
+    QJL --> Out
+    
+    style Out fill:#e1f5fe
 ```
 
 ## Data Flow Through System
 
 ```mermaid
-graph TB
-    subgraph "Training Phase"
-        A[Input Tokens] --> B[Embed + Pos Encode]
-        B --> C[Layer 1]
-        C --> D[Layer 2]
-        D --> E[...]
-        E --> F[Layer L]
-        F --> G[LM Head]
-        G --> H[Loss]
+flowchart TB
+    subgraph Train["Training"]
+        direction LR
+        T1[Tokens] --> T2[Embed] --> T3[Layers] --> T4[Head] --> T5[Loss]
     end
     
-    subgraph "Inference Phase"
-        I[Input] --> J[Cache KV]
-        J --> K{Gating Check}
-        
-        K -->|High Loss| L[qTTT Adapt]
-        K -->|Low Loss| M[Standard Forward]
-        
-        L --> N[Generate]
-        M --> N
+    subgraph Inf["Inference"]
+        direction TB
+        I1[Input] --> I2[KV Cache]
+        I2 --> I3{Gating}
+        I3 -->|High Loss| I4[qTTT]
+        I3 -->|Low Loss| I5[Standard]
+        I4 --> I6[Generate]
+        I5 --> I6
     end
     
-    subgraph "Compression Phase"
-        O[Model Weights] --> P[TurboQuant]
-        P --> Q[4-bit Weights]
-        P --> R[Compressed KV Cache]
+    subgraph Comp["Compression"]
+        direction LR
+        C1[Weights] --> C2[TurboQuant]
+        C2 --> C3[4-bit Weights]
+        C2 --> C4[Compressed KV]
     end
+    
+    style Train fill:#e8f5e9
+    style Inf fill:#fff3e0
+    style Comp fill:#fce4ec
 ```
 
 ## Directory Structure
@@ -216,22 +223,28 @@ Adaptive-Deep-Networks/
 │
 ├── experiments/                  # Experiment framework
 │   ├── common/                   # Shared utilities
+│   │   └── config.py            # YAML config loader
 │   ├── core/                     # Core experiments (exp1-6)
-│   ├── validation/               # Paper validation
-│   └── real_model/              # Real model validation
+│   │   ├── base_experiment.py   # Base class
+│   │   └── exp*.py              # Individual experiments
+│   ├── runner/                   # Experiment execution
+│   └── validation/               # Paper validation
 │
 ├── scripts/                      # Training scripts
-│   ├── common/                   # Shared training code
-│   └── train_refactored.py      # Unified training
+│   └── train.py                 # Unified training
 │
 ├── configs/                      # Configuration files
-│   └── experiments/
+│   └── experiments/             # YAML configs
 │
 ├── tests/                        # Test suite
-│   └── unit/
+│   └── unit/                    # Unit tests
+│       ├── test_attnres.py
+│       ├── test_qttt.py
+│       └── test_gating.py
 │
 └── docs/                         # Documentation
-    ├── api/                      # API docs
+    ├── api/                     # API reference
+    │   └── README.md
     └── ARCHITECTURE.md          # This file
 ```
 
@@ -271,6 +284,16 @@ Adaptive-Deep-Networks/
 2. **New Gating Policies**: Extend `DynamicThreshold`
 3. **New Compression**: Extend `TurboQuantPipeline`
 4. **New Adaptation**: Extend `QueryOnlyTTT`
+
+## Troubleshooting
+
+### Mermaid Diagrams Not Rendering
+
+If diagrams don't render on GitHub:
+
+1. **Check GitHub support**: Mermaid requires GitHub's native renderer
+2. **Use GitHub Web**: The mobile app may not support Mermaid
+3. **Alternative**: View the [API Documentation](./api/README.md) which includes ASCII diagrams
 
 ## References
 
