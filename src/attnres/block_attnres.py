@@ -1,8 +1,35 @@
 """
 Block Attention Residuals (AttnRes) Implementation
 
+This module implements Block Attention Residuals, a method for maintaining
+distributed representations across deep transformer layers to prevent
+representation burial.
+
+Key Features:
+    - Block-based attention over layer representations
+    - Two-phase computation (inter-block and intra-block)
+    - Memory efficient: O(Nd) instead of O(Ld)
+    - Learnable pseudo-queries for block aggregation
+
 Based on: Chen et al. "Attention Residuals" Technical Report, 2026
-Reference: Page 5, Figure 2
+Paper Reference: Page 5, Figure 2, Algorithm 1
+
+Example:
+    >>> import torch
+    >>> from src.attnres.block_attnres import BlockAttnRes, RMSNorm
+    >>> 
+    >>> # Initialize layer
+    >>> dim = 512
+    >>> num_blocks = 8
+    >>> layer = BlockAttnRes(dim, num_blocks)
+    >>> 
+    >>> # Create block representations
+    >>> batch_size, seq_len = 2, 10
+    >>> blocks = [torch.randn(batch_size, seq_len, dim) for _ in range(4)]
+    >>> hidden = torch.randn(batch_size, seq_len, dim)
+    >>> 
+    >>> # Forward pass
+    >>> h_attn, h_mlp = layer(blocks, hidden, use_attn=True, use_mlp=True)
 """
 
 import torch
@@ -12,7 +39,34 @@ from typing import List, Optional, Tuple
 
 
 class RMSNorm(nn.Module):
-    """Root Mean Square Layer Normalization."""
+    """
+    Root Mean Square Layer Normalization.
+    
+    RMSNorm normalizes inputs by their root mean square instead of mean and variance,
+    providing better stability for deep networks without the mean-centering overhead
+    of LayerNorm.
+    
+    Formula:
+        RMSNorm(x) = x / sqrt(mean(x^2) + eps) * weight
+    
+    Args:
+        dim: Dimension to normalize over
+        eps: Small constant for numerical stability (default: 1e-6)
+    
+    Attributes:
+        weight: Learnable scale parameter of shape [dim]
+    
+    Example:
+        >>> import torch
+        >>> norm = RMSNorm(dim=512)
+        >>> x = torch.randn(2, 10, 512)
+        >>> normalized = norm(x)
+        >>> normalized.shape
+        torch.Size([2, 10, 512])
+    
+    References:
+        Zhang and Sennrich (2019): "Root Mean Square Layer Normalization"
+    """
     
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
@@ -20,8 +74,15 @@ class RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(dim))
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [..., dim]
-        # RMSNorm: x / sqrt(mean(x^2)) * weight
+        """
+        Apply RMSNorm to input tensor.
+        
+        Args:
+            x: Input tensor of shape [..., dim]
+        
+        Returns:
+            Normalized tensor of shape [..., dim]
+        """
         rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
         return self.weight * x / rms
 

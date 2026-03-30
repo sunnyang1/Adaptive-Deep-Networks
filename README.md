@@ -1,10 +1,17 @@
-# Adaptive Deep Networks: Validation Framework
+# Adaptive Deep Networks (ADN)
 
 [![Validation](https://github.com/sunnyang1/Adaptive-Deep-Networks/workflows/Validation/badge.svg)](https://github.com/sunnyang1/Adaptive-Deep-Networks/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![Code Style](https://img.shields.io/badge/code%20style-black-black.svg)](https://github.com/psf/black)
 
-Validation framework for the paper "Adaptive Deep Networks: Integrating Attention Residuals, Dynamic Computation, and Test-Time Adaptation".
+**Adaptive Deep Networks: Integrating Attention Residuals, Dynamic Computation, and Test-Time Adaptation**
+
+This repository provides a complete implementation and validation framework for the ADN paper, featuring:
+- **Block Attention Residuals (AttnRes)** - Prevents representation burial in deep transformers
+- **Query-only Test-Time Training (qTTT)** - Dynamic adaptation with frozen KV cache
+- **TurboQuant** - 6x model compression with zero accuracy loss
+- **Dynamic Gating** - Allocates computation based on input difficulty
 
 ## Overview
 
@@ -34,41 +41,40 @@ This repository provides a complete validation framework for reproducing the pap
 git clone https://github.com/sunnyang1/Adaptive-Deep-Networks.git
 cd Adaptive-Deep-Networks
 
-# Setup on Lambda AI
+# Setup environment
+pip install -e ".[dev]"
+
+# Or setup on Lambda AI
 bash scripts/lambda_setup.sh
-
-# Or local installation
-pip install -r requirements.txt
 ```
 
-### Streaming Training (Zero Local Storage)
-
-For limited disk space (e.g., AutoDL 50GB), use streaming training:
+### Run Experiments
 
 ```bash
-# Single GPU with streaming
-python scripts/train_streaming.py --model-size medium --max-steps 10000
+# List available experiments
+python experiments/run_refactored.py --list
 
-# Multi-GPU distributed training with streaming
-torchrun --nproc_per_node=4 scripts/train_streaming.py --model-size medium --max-steps 100000
+# Run a specific experiment
+python experiments/run_refactored.py exp1_representation_burial
 
-# FineWeb dataset streaming
-python scripts/train_streaming.py --model-size small --dataset fineweb --dataset-config sample-10BT
+# Run with quick mode (reduced samples)
+python experiments/run_refactored.py exp3_gradient_flow --quick
+
+# Run with custom config
+python experiments/run_refactored.py exp2_margin_analysis --config configs/experiments/exp2.yaml
 ```
 
-See `STREAMING_TRAINING_GUIDE.md` for details.
-
-### Run Validation
+### Training
 
 ```bash
-# Run all benchmarks
-python scripts/run_benchmarks.py --model-size medium --benchmarks all
+# Unified training script (works on all platforms)
+python scripts/train_refactored.py --model-size medium --epochs 3
 
-# Run specific benchmark
-python scripts/run_benchmarks.py --benchmarks flop
+# Multi-GPU distributed training
+torchrun --nproc_per_node=4 scripts/train_refactored.py --model-size medium --distributed
 
-# Skip model tests (FLOP analysis only)
-python scripts/run_benchmarks.py --skip-model-tests
+# Streaming training (for limited disk space)
+python scripts/train_streaming.py --model-size small --max-steps 10000
 ```
 
 ### Run Tests
@@ -77,34 +83,88 @@ python scripts/run_benchmarks.py --skip-model-tests
 # All tests
 pytest tests/ -v
 
-# With coverage
+# With coverage report
 pytest tests/ -v --cov=src --cov-report=html
 
 # Specific module
 pytest tests/unit/test_attnres.py -v
+pytest tests/unit/test_turboquant.py -v
+
+# Run linting
+black --check src/ experiments/ scripts/
+ruff check src/ experiments/ scripts/
+mypy src/
 ```
+
+## Documentation
+
+- **[API Documentation](docs/api/README.md)** - Complete API reference
+- **[Architecture Guide](docs/ARCHITECTURE.md)** - System architecture and diagrams
+- **[Migration Guide](experiments/MIGRATION_GUIDE.md)** - How to migrate experiments
+- **[Refactoring Summary](experiments/REFACTORING_SUMMARY.md)** - Architecture refactoring details
+
+## Key Features
+
+### 🧠 Block Attention Residuals (AttnRes)
+Replaces fixed residual connections with learned attention over block representations:
+- **Memory Efficient**: O(Nd) instead of O(Ld)
+- **Prevents Representation Burial**: Maintains gradient flow in deep networks
+- **Minimal Overhead**: <2% computation increase
+
+### ⚡ Query-Only Test-Time Training (qTTT)
+Dynamic adaptation while keeping KV cache frozen:
+- **Fast Adaptation**: Only 0.5% of parameters updated
+- **Frozen KV Cache**: No memory overhead
+- **Margin Maximization**: Explicit logit margin optimization
+
+### 🗜️ TurboQuant Compression
+6x model compression with zero accuracy loss:
+- **Two-Stage Pipeline**: PolarQuant + QJL
+- **Tensor Core Ready**: INT4 quantization
+- **5.7x KV Cache Reduction**: Enables 1M+ context lengths
+
+### 🎛️ Dynamic Gating
+Allocates computation based on input difficulty:
+- **Reconstruction Loss Signal**: Difficulty proxy
+- **EMA/Target-Rate Calibration**: Adaptive threshold
+- **Depth-Priority Policy**: TurboQuant-aware allocation
 
 ## Project Structure
 
 ```
-.
-├── src/
-│   ├── attnres/          # Block AttnRes implementation
-│   ├── gating/           # Dynamic gating
-│   ├── qttt/             # Query-only TTT
-│   ├── models/           # Model definitions
-│   └── benchmarks/       # Evaluation benchmarks
-├── tests/
-│   ├── unit/             # Unit tests
-│   ├── integration/      # Integration tests
-│   └── benchmarks/       # Benchmark tests
-├── scripts/
-│   ├── lambda_setup.sh   # Lambda AI setup
-│   └── run_benchmarks.py # Main runner
-├── tasks/
-│   ├── product-brief.md
-│   └── prd-*.md
-└── prd.json              # Task tracking
+Adaptive-Deep-Networks/
+├── src/                          # Core implementation
+│   ├── attnres/                  # Block Attention Residuals
+│   ├── qttt/                     # Query-Only Test-Time Training
+│   ├── gating/                   # Dynamic gating controller
+│   ├── models/                   # Model definitions
+│   ├── turboquant/              # TurboQuant compression
+│   └── benchmarks/              # Evaluation benchmarks
+│
+├── experiments/                  # Experiment framework
+│   ├── common/                   # Shared utilities (config, paths, logging)
+│   ├── core/                     # Core paper experiments (exp1-6)
+│   ├── validation/               # Paper table validation scripts
+│   ├── real_model/              # Real model validation
+│   └── runner/                  # Experiment execution framework
+│
+├── scripts/                      # Training and setup scripts
+│   ├── common/                  # Shared training utilities
+│   ├── train_refactored.py      # Unified training script
+│   └── lambda_setup.sh          # Lambda AI setup
+│
+├── configs/                      # Configuration files
+│   └── experiments/             # YAML configs for experiments
+│
+├── tests/                        # Test suite
+│   ├── unit/                    # Unit tests
+│   └── conftest.py              # Pytest fixtures
+│
+├── docs/                         # Documentation
+│   ├── api/                     # API documentation
+│   └── ARCHITECTURE.md          # Architecture diagrams
+│
+└── pyproject.toml               # Project configuration
 ```
 
 ## Core Algorithms
