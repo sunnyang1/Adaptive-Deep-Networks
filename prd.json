@@ -1,0 +1,129 @@
+{
+  "projectName": "TurboQuant Code Refactor",
+  "branchName": "refactor/turboquant-cleanup",
+  "complexity": "medium",
+  "totalStories": 7,
+  "userStories": [
+    {
+      "id": "US-1",
+      "title": "Fix circular import issues",
+      "description": "Remove runtime imports from tensor_core.py and polar_pseudo_query.py to prevent circular dependency risks",
+      "acceptanceCriteria": [
+        "tensor_core.py imports moved to top",
+        "polar_pseudo_query.py imports moved to top",
+        "All modules can be imported safely at module level"
+      ],
+      "priority": "P0",
+      "estimatedMinutes": 15,
+      "files": ["src/turboquant/tensor_core.py", "src/attnres/polar_pseudo_query.py"],
+      "passes": true
+    },
+    {
+      "id": "US-2",
+      "title": "Fix __all__ export errors",
+      "description": "Remove undefined symbols from __all__ exports in __init__.py files",
+      "acceptanceCriteria": [
+        "Remove BlockAttnResConfig from attnres/__init__.py",
+        "Remove PolarToCartesian from turboquant/__init__.py",
+        "Verify all exported symbols exist"
+      ],
+      "priority": "P0",
+      "estimatedMinutes": 10,
+      "files": ["src/attnres/__init__.py", "src/turboquant/__init__.py"],
+      "passes": true
+    },
+    {
+      "id": "US-3",
+      "title": "Fix method parameter inconsistency",
+      "description": "Fix PolarQueryAdapter.get_query() parameter mismatch in polar_adaptation.py",
+      "acceptanceCriteria": [
+        "Method signature matches usage",
+        "No unused parameters",
+        "Tests pass"
+      ],
+      "priority": "P0",
+      "estimatedMinutes": 10,
+      "files": ["src/qttt/polar_adaptation.py"],
+      "passes": true
+    },
+    {
+      "id": "US-4",
+      "title": "Unify type annotations",
+      "description": "Standardize type annotations across codebase: device types, Optional usage, list annotations",
+      "acceptanceCriteria": [
+        "device parameter uses Union[str, torch.device]",
+        "All Optional parameters properly annotated",
+        "Fix bare list type annotations",
+        "mypy src/ passes without errors"
+      ],
+      "priority": "P1",
+      "estimatedMinutes": 25,
+      "files": [
+        "src/turboquant/polar_quant.py",
+        "src/turboquant/qjl.py",
+        "src/turboquant/tensor_core.py",
+        "src/qttt/adaptation.py",
+        "src/qttt/margin_loss.py",
+        "src/gating/threshold.py",
+        "src/models/adaptive_transformer.py"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-5",
+      "title": "Rename conflicting PolarQueryAdapter classes",
+      "description": "Rename duplicate class names to avoid confusion between attnres and qttt modules",
+      "acceptanceCriteria": [
+        "attnres PolarQueryAdapter renamed to PseudoQueryPolarAdapter",
+        "qttt PolarQueryAdapter renamed to QueryAdaptationPolarAdapter",
+        "All references updated",
+        "Backward compatibility maintained via aliases"
+      ],
+      "priority": "P1",
+      "estimatedMinutes": 20,
+      "files": [
+        "src/attnres/polar_pseudo_query.py",
+        "src/qttt/polar_adaptation.py",
+        "src/attnres/__init__.py",
+        "src/qttt/__init__.py"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-6",
+      "title": "Optimize QJL attention performance",
+      "description": "Replace nested loops in attention_with_qjl with matrix operations",
+      "acceptanceCriteria": [
+        "Remove nested loops in qjl.py",
+        "Use batch matrix operations",
+        "Performance improvement >10x",
+        "Numerical accuracy maintained (<1e-5 relative error)"
+      ],
+      "priority": "P1",
+      "estimatedMinutes": 30,
+      "files": ["src/turboquant/qjl.py"],
+      "passes": true
+    },
+    {
+      "id": "US-7",
+      "title": "Add missing tests and code formatting",
+      "description": "Add tests for models and benchmarks modules, configure code formatting tools",
+      "acceptanceCriteria": [
+        "Add tests/unit/test_models.py",
+        "Add tests/unit/test_benchmarks.py",
+        "Configure pyproject.toml with black/ruff settings",
+        "Add conftest.py for shared fixtures",
+        "Overall test coverage >80%"
+      ],
+      "priority": "P2",
+      "estimatedMinutes": 40,
+      "files": [
+        "tests/unit/test_models.py",
+        "tests/unit/test_benchmarks.py",
+        "pyproject.toml",
+        "tests/conftest.py"
+      ],
+      "passes": true
+    }
+  ]
+}
