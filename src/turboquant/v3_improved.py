@@ -319,8 +319,9 @@ class MSECompressor:
             dim = 1 << (head_dim - 1).bit_length()
             self.rotation = RandomRotation(dim, self.config.device)
             
-            # Rotate sample data
-            sample_padded = self._pad_to_dim(sample_data, dim)
+            # Normalize, then rotate sample data (consistent with compress)
+            sample_norm = sample_data / (sample_data.norm(dim=-1, keepdim=True) + 1e-8)
+            sample_padded = self._pad_to_dim(sample_norm, dim)
             sample_rotated = self.rotation.rotate(sample_padded)
         else:
             sample_rotated = sample_data
@@ -339,6 +340,8 @@ class MSECompressor:
         """
         Compress tensor with bit-packed storage.
         
+        Uses per-vector normalization to handle varying magnitudes.
+        
         Args:
             x: Input tensor [..., head_dim]
             head_dim: Head dimension
@@ -348,13 +351,17 @@ class MSECompressor:
         """
         original_shape = x.shape
         
+        # Per-vector normalization for dynamic range handling
+        x_norm = x.norm(dim=-1, keepdim=True)
+        x_normalized = x / (x_norm + 1e-8)
+        
         # Pad if needed
         if self.rotation:
             dim = self.rotation.dim
-            x_padded = self._pad_to_dim(x, dim)
+            x_padded = self._pad_to_dim(x_normalized, dim)
             x_rotated = self.rotation.rotate(x_padded)
         else:
-            x_rotated = x
+            x_rotated = x_normalized
         
         # Quantize
         indices, _ = self.quantizer.quantize(x_rotated)
@@ -368,12 +375,17 @@ class MSECompressor:
         
         return {
             'indices': indices_packed,
+            'norm': x_norm.half(),  # Store norm for reconstruction
             'pack_shape': pack_shape,
             'original_shape': original_shape,
         }
     
     def decompress(self, compressed: Dict[str, torch.Tensor]) -> torch.Tensor:
-        """Decompress tensor."""
+        """
+        Decompress tensor.
+        
+        Restores per-vector normalization for accurate reconstruction.
+        """
         # Unpack bits
         if self.config.pack_bits and compressed.get('pack_shape') is not None:
             indices = unpack_bits(
@@ -389,11 +401,14 @@ class MSECompressor:
         
         # Inverse rotation
         if self.rotation:
-            x = self.rotation.inverse(x_rotated)
+            x_normalized = self.rotation.inverse(x_rotated)
             # Remove padding
-            x = x[..., :compressed['original_shape'][-1]]
+            x_normalized = x_normalized[..., :compressed['original_shape'][-1]]
         else:
-            x = x_rotated
+            x_normalized = x_rotated
+        
+        # Restore norm for accurate reconstruction
+        x = x_normalized * compressed['norm'].float()
         
         return x.reshape(compressed['original_shape'])
     
