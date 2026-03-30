@@ -45,7 +45,7 @@ cd Adaptive-Deep-Networks
 pip install -e ".[dev]"
 
 # Or setup on Lambda AI
-bash scripts/lambda_setup.sh
+bash scripts/setup/lambda_setup.sh
 ```
 
 ### Run Experiments
@@ -94,8 +94,8 @@ pytest tests/unit/test_attnres.py -v
 pytest tests/unit/test_turboquant.py -v
 
 # Run linting
-black --check src/ experiments/ scripts/
-ruff check src/ experiments/ scripts/
+black --check src/ experiments/ scripts/ tests/
+ruff check src/ experiments/ scripts/ tests/
 mypy src/
 ```
 
@@ -156,11 +156,11 @@ Adaptive-Deep-Networks/
 │   ├── setup/                   # Environment setup
 │   ├── model/                   # Model building and analysis
 │   ├── training/                # Training scripts
+│   │   └── common/              # Shared training utilities
 │   ├── evaluation/              # Benchmarks and evaluation
 │   ├── experiments/             # Paper experiments
 │   ├── data/                    # Data processing
 │   ├── colab/                   # Google Colab scripts
-│   └── common/                  # Shared utilities
 │   └── README.md                # Script documentation
 │
 ├── configs/                      # Configuration files
