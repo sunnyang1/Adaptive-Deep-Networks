@@ -7,7 +7,7 @@
 ```
 experiments/
 ├── README.md                          # 本文件
-├── run_all_experiments.py             # 主运行脚本
+├── run_experiments_unified.py         # 统一实验运行脚本（新版）
 ├── configs/                           # 实验配置文件
 │   └── default.yaml
 ├── core/                              # 核心验证实验（原 exp1-exp6）
@@ -39,13 +39,13 @@ experiments/
 
 ```bash
 # 快速模式（减少计算量，用于测试）
-python run_all.py --quick
+python run_experiments_unified.py --all --quick
 
 # 完整模式
-python run_all.py
+python run_experiments_unified.py --all
 
 # 查看所有可用实验
-python run_all.py --list
+python run_experiments_unified.py --list
 ```
 
 ### 使用 Makefile
@@ -54,14 +54,20 @@ python run_all.py --list
 # 列出所有实验
 make list
 
-# 快速运行
+# 快速运行所有实验
 make quick
 
-# 完整运行
+# 完整运行所有实验
 make full
 
 # 仅运行核心实验
 make core
+
+# 运行验证实验
+make validate
+
+# 生成论文指标
+make paper-metrics
 
 # 使用CPU
 make quick-cpu
@@ -89,16 +95,27 @@ python core/exp5_synergy/run_exp5.py
 python core/exp6_auxiliary/run_exp6.py
 ```
 
-### 使用 CPU 运行
+### 使用统一脚本运行
 
 ```bash
-python run_all_experiments.py --device cpu
-```
+# 运行所有实验
+python run_experiments_unified.py --all
 
-### 快速模式
+# 运行特定类别
+python run_experiments_unified.py --category core
+python run_experiments_unified.py --category validation
 
-```bash
-python run_all_experiments.py --quick
+# 运行特定实验
+python run_experiments_unified.py --exp exp1 exp2
+
+# 使用 CPU
+python run_experiments_unified.py --all --device cpu
+
+# 快速模式
+python run_experiments_unified.py --all --quick
+
+# 干运行（查看会执行什么）
+python run_experiments_unified.py --all --dry-run
 ```
 
 ## 实验分类

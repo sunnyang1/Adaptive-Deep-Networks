@@ -18,19 +18,19 @@ help:
 	@echo "  TIMEOUT=30      - 设置超时（分钟）"
 
 list:
-	python run_all.py --list
+	python run_experiments_unified.py --list
 
 quick:
-	python run_all.py --quick
+	python run_experiments_unified.py --all --quick
 
 full:
-	python run_all.py
+	python run_experiments_unified.py --all
 
 core:
-	python run_all.py --category core
+	python run_experiments_unified.py --category core
 
 turboquant:
-	python run_all.py --category turboquant
+	python run_experiments_unified.py --exp val_turboquant
 
 clean:
 	rm -rf results/unified/*
@@ -42,7 +42,15 @@ clean-all:
 
 # 带选项的运行
 quick-cpu:
-	python run_all.py --quick --device cpu
+	python run_experiments_unified.py --all --quick --device cpu
 
 full-cpu:
-	python run_all.py --device cpu
+	python run_experiments_unified.py --all --device cpu
+
+# Validation experiments
+validate:
+	python run_experiments_unified.py --category validation
+
+# Paper metrics
+paper-metrics:
+	python run_experiments_unified.py --exp paper_metrics
