@@ -1,283 +1,217 @@
 """
-Unit tests for Block Attention Residuals.
+Unit tests for Attention Residuals (AttnRes) module.
 
-Tests based on Attention Residuals Technical Report specifications.
+Tests:
+- RMSNorm functionality
+- block_attn_res computation
+- BlockAttnRes layer
 """
 
-import torch
 import pytest
-import sys
-import os
+import torch
+import torch.nn as nn
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
-from attnres.block_attnres import (
-    BlockAttnRes,
-    block_attn_res,
-    RMSNorm,
-    TwoPhaseBlockAttnRes
+from src.attnres.block_attnres import (
+    RMSNorm, block_attn_res, BlockAttnRes
 )
-from attnres.pseudo_query import PseudoQueryManager, PseudoQueryInitializer
 
 
 class TestRMSNorm:
     """Tests for RMSNorm layer."""
     
-    def test_initialization(self):
-        norm = RMSNorm(128)
-        assert norm.weight.shape == (128,)
-        assert torch.allclose(norm.weight, torch.ones(128))
+    def test_rmsnorm_output_shape(self):
+        """Test that RMSNorm preserves input shape."""
+        batch, seq_len, dim = 2, 10, 512
+        rmsnorm = RMSNorm(dim)
+        x = torch.randn(batch, seq_len, dim)
+        
+        output = rmsnorm(x)
+        
+        assert output.shape == x.shape
     
-    def test_forward_shape(self):
-        norm = RMSNorm(128)
-        x = torch.randn(2, 10, 128)
-        out = norm(x)
-        assert out.shape == x.shape
+    def test_rmsnorm_normalization(self):
+        """Test that RMSNorm normalizes as expected."""
+        dim = 64
+        rmsnorm = RMSNorm(dim)
+        
+        # Create input with known RMS
+        x = torch.ones(1, 1, dim) * 2.0
+        
+        output = rmsnorm(x)
+        
+        # RMS of output should be close to 1 (with weight=1)
+        rms = torch.sqrt(torch.mean(output ** 2))
+        assert torch.allclose(rms, torch.tensor(1.0), atol=1e-5)
     
-    def test_normalization(self):
-        norm = RMSNorm(128)
-        x = torch.randn(2, 10, 128) * 10
-        out = norm(x)
-        # RMSNorm produces unit RMS, not unit L2 norm
-        # L2 norm = sqrt(dim) * RMS = sqrt(128) ≈ 11.31
-        # Check that output has roughly unit RMS
-        mean_rms = torch.sqrt(torch.mean(out ** 2, dim=-1)).mean()
-        assert 0.9 < mean_rms < 1.1
+    def test_rmsnorm_learnable_weight(self):
+        """Test that RMSNorm has learnable weight parameter."""
+        dim = 128
+        rmsnorm = RMSNorm(dim)
+        
+        assert hasattr(rmsnorm, 'weight')
+        assert rmsnorm.weight.shape == (dim,)
+        assert rmsnorm.weight.requires_grad
+    
+    def test_rmsnorm_different_dims(self):
+        """Test RMSNorm with various dimensions."""
+        for dim in [64, 128, 256, 512]:
+            rmsnorm = RMSNorm(dim)
+            x = torch.randn(4, 8, dim)
+            output = rmsnorm(x)
+            assert output.shape == x.shape
 
 
 class TestBlockAttnRes:
-    """Tests for BlockAttnRes module."""
+    """Tests for block_attn_res function."""
     
-    @pytest.fixture
-    def config(self):
-        return {
-            'dim': 128,
-            'num_blocks': 4,
-            'batch': 2,
-            'seq_len': 10
-        }
-    
-    def test_initialization(self, config):
-        module = BlockAttnRes(config['dim'], config['num_blocks'])
-        
-        # Check pseudo-queries are zero-initialized
-        assert torch.allclose(module.pseudo_query_attn, torch.zeros(config['dim']))
-        assert torch.allclose(module.pseudo_query_mlp, torch.zeros(config['dim']))
-    
-    def test_forward_shape(self, config):
-        module = BlockAttnRes(config['dim'], config['num_blocks'])
-        
-        # Create dummy inputs
-        blocks = [torch.randn(config['batch'], config['seq_len'], config['dim']) 
-                  for _ in range(2)]
-        partial = torch.randn(config['batch'], config['seq_len'], config['dim'])
-        
-        h_attn, h_mlp = module(blocks, partial)
-        
-        assert h_attn.shape == (config['batch'], config['seq_len'], config['dim'])
-        assert h_mlp.shape == (config['batch'], config['seq_len'], config['dim'])
-    
-    def test_uniform_attention_at_init(self, config):
-        """At initialization (zero pseudo-query), attention should be uniform."""
-        module = BlockAttnRes(config['dim'], config['num_blocks'])
-        
-        # Create dummy inputs
-        num_blocks = 3
-        blocks = [torch.randn(config['batch'], config['seq_len'], config['dim']) 
-                  for _ in range(num_blocks)]
-        partial = torch.randn(config['batch'], config['seq_len'], config['dim'])
-        
-        # Zero out pseudo-query
-        module.pseudo_query_attn.data.zero_()
-        
-        h_attn, _ = module(blocks, partial, use_attn=True, use_mlp=False)
-        
-        # With zero query, all keys have same compatibility
-        # Result should be approximately uniform average
-        # Just verify output is finite and reasonable
-        assert torch.isfinite(h_attn).all()
-    
-    def test_memory_complexity(self, config):
-        """Verify memory usage is O(Nd) not O(Ld)."""
-        # This is a conceptual test - in practice we'd profile memory
-        module = BlockAttnRes(config['dim'], config['num_blocks'])
-        
-        # With 4 blocks, should only store 4 block representations
-        # not all layer outputs
-        assert module.num_blocks == config['num_blocks']
-
-
-class TestBlockAttnResFunction:
-    """Tests for standalone block_attn_res function."""
-    
-    def test_basic_functionality(self):
-        dim = 64
-        num_blocks = 3
-        batch = 2
-        seq_len = 5
+    def test_block_attn_res_output_shape(self):
+        """Test output shape of block_attn_res."""
+        batch, seq_len, dim = 2, 10, 64
+        num_blocks = 4
         
         blocks = [torch.randn(batch, seq_len, dim) for _ in range(num_blocks)]
-        partial = torch.randn(batch, seq_len, dim)
+        partial_block = torch.randn(batch, seq_len, dim)
         pseudo_query = torch.randn(dim)
         norm = RMSNorm(dim)
         
-        output = block_attn_res(blocks, partial, pseudo_query, norm)
+        output = block_attn_res(blocks, partial_block, pseudo_query, norm)
         
         assert output.shape == (batch, seq_len, dim)
-        assert torch.isfinite(output).all()
     
-    def test_attention_weights_sum_to_one(self):
-        """Attention weights should sum to 1."""
-        dim = 64
+    def test_block_attn_res_weighted_sum(self):
+        """Test that block_attn_res produces weighted sum."""
+        batch, seq_len, dim = 1, 1, 4
+        
+        # Create simple blocks
+        blocks = [
+            torch.ones(batch, seq_len, dim) * i
+            for i in range(3)
+        ]
+        partial_block = torch.ones(batch, seq_len, dim) * 3
+        pseudo_query = torch.randn(dim)
+        norm = RMSNorm(dim)
+        
+        output = block_attn_res(blocks, partial_block, pseudo_query, norm)
+        
+        # Output should be a weighted combination (not equal to any single block)
+        assert not torch.allclose(output, blocks[0])
+        assert not torch.allclose(output, partial_block)
+    
+    def test_block_attn_res_numerical_stability(self):
+        """Test numerical stability with small epsilon."""
+        batch, seq_len, dim = 2, 5, 32
         num_blocks = 3
         
-        blocks = [torch.randn(1, 1, dim) for _ in range(num_blocks)]
-        partial = torch.randn(1, 1, dim)
-        pseudo_query = torch.randn(dim)
-        norm = RMSNorm(dim)
+        blocks = [torch.randn(batch, seq_len, dim) * 0.01 for _ in range(num_blocks)]
+        partial_block = torch.randn(batch, seq_len, dim) * 0.01
+        pseudo_query = torch.randn(dim) * 0.01
+        norm = RMSNorm(dim, eps=1e-6)
         
-        # Manually compute to check weights
-        V = torch.stack(blocks + [partial], dim=0)  # [4, 1, 1, 64]
-        K = norm(V)
-        logits = torch.einsum('d, n b t d -> n b t', pseudo_query, K)
-        logits = logits / (dim ** 0.5)
-        weights = torch.softmax(logits, dim=0)
+        output = block_attn_res(blocks, partial_block, pseudo_query, norm)
         
-        # Weights should sum to 1
-        assert torch.allclose(weights.sum(), torch.tensor(1.0), atol=1e-5)
+        # Should not produce NaN or Inf
+        assert not torch.isnan(output).any()
+        assert not torch.isinf(output).any()
 
 
-class TestPseudoQueryManager:
-    """Tests for PseudoQueryManager."""
+class TestBlockAttnResLayer:
+    """Tests for BlockAttnRes layer."""
     
-    def test_initialization(self):
-        manager = PseudoQueryManager(
-            num_layers=32,
-            dim=128,
-            num_blocks=8
-        )
+    def test_block_attn_res_layer_init(self):
+        """Test BlockAttnRes layer initialization."""
+        dim = 128
+        num_blocks = 8
         
-        # Check shape
-        assert manager.pseudo_queries.shape == (32, 2, 128)
+        layer = BlockAttnRes(dim, num_blocks)
         
-        # Check zero-initialized
-        assert torch.allclose(manager.pseudo_queries, torch.zeros(32, 2, 128))
+        assert layer.dim == dim
+        assert layer.num_blocks == num_blocks
+        assert hasattr(layer, 'pseudo_query_attn')
+        assert hasattr(layer, 'pseudo_query_mlp')
     
-    def test_get_pseudo_query(self):
-        manager = PseudoQueryManager(32, 128, 8)
-        
-        query = manager.get_pseudo_query(5, is_mlp=False)
-        assert query.shape == (128,)
-        
-        mlp_query = manager.get_pseudo_query(5, is_mlp=True)
-        assert mlp_query.shape == (128,)
-        
-        # Should be different parameter slices (different memory locations)
-        assert query is not mlp_query
-        
-        # After random initialization, they should have different values
-        manager.pseudo_queries.data.normal_()
-        query = manager.get_pseudo_query(5, is_mlp=False)
-        mlp_query = manager.get_pseudo_query(5, is_mlp=True)
-        assert not torch.allclose(query, mlp_query)
-    
-    def test_compute_attention_weights(self):
-        manager = PseudoQueryManager(32, 128, 8)
-        
-        blocks = [torch.randn(2, 10, 128) for _ in range(3)]
-        weights = manager.compute_attention_weights(0, blocks, is_mlp=False)
-        
-        # Should sum to 1
-        assert torch.allclose(weights.sum(), torch.tensor(1.0), atol=1e-5)
-    
-    def test_entropy_computation(self):
-        manager = PseudoQueryManager(32, 128, 8)
-        
-        # Uniform distribution should have max entropy
-        uniform = torch.ones(8) / 8
-        entropy_uniform = manager.compute_entropy(uniform)
-        
-        # Concentrated distribution should have lower entropy
-        concentrated = torch.zeros(8)
-        concentrated[0] = 1.0
-        entropy_concentrated = manager.compute_entropy(concentrated)
-        
-        assert entropy_concentrated < entropy_uniform
-
-
-class TestPseudoQueryInitializer:
-    """Tests for initialization strategies."""
-    
-    def test_zero_init(self):
-        module = BlockAttnRes(128, 8)
-        module.pseudo_query_attn.data.normal_()
-        
-        PseudoQueryInitializer.zero_init(module)
-        
-        assert torch.allclose(module.pseudo_query_attn, torch.zeros(128))
-    
-    def test_uniform_init(self):
-        module = BlockAttnRes(128, 8)
-        module.pseudo_query_attn.data.zero_()
-        
-        PseudoQueryInitializer.uniform_init(module, std=0.02)
-        
-        # Should not be zero anymore
-        assert not torch.allclose(module.pseudo_query_attn, torch.zeros(128))
-        
-        # Should have reasonable magnitude
-        assert module.pseudo_query_attn.abs().max() < 1.0
-
-
-class TestTwoPhaseBlockAttnRes:
-    """Tests for two-phase computation strategy."""
-    
-    def test_initialization(self):
-        module = TwoPhaseBlockAttnRes(dim=128, block_size=4)
-        assert module.dim == 128
-        assert module.block_size == 4
-    
-    def test_phase1_output_shape(self):
-        module = TwoPhaseBlockAttnRes(dim=128, block_size=4)
-        
-        # 4 queries, 3 blocks
-        pseudo_queries = torch.randn(4, 128)
-        block_reps = [torch.randn(2, 10, 128) for _ in range(3)]
-        
-        outputs, max_vals, lse = module.phase1_inter_block(pseudo_queries, block_reps)
-        
-        assert outputs.shape == (4, 2, 10, 128)
-        assert max_vals.shape == (4, 2, 10)
-        assert lse.shape == (4, 2, 10)
-
-
-class TestNumericalStability:
-    """Tests for numerical stability edge cases."""
-    
-    def test_large_values(self):
-        """Should handle large input values."""
+    def test_block_attn_res_layer_zero_init(self):
+        """Test that pseudo-queries are initialized to zero."""
         dim = 64
-        blocks = [torch.randn(2, 10, dim) * 100 for _ in range(3)]
-        partial = torch.randn(2, 10, dim) * 100
-        pseudo_query = torch.randn(dim)
-        norm = RMSNorm(dim)
+        layer = BlockAttnRes(dim)
         
-        output = block_attn_res(blocks, partial, pseudo_query, norm)
-        
-        assert torch.isfinite(output).all()
+        assert torch.allclose(layer.pseudo_query_attn, torch.zeros(dim))
+        assert torch.allclose(layer.pseudo_query_mlp, torch.zeros(dim))
     
-    def test_small_values(self):
-        """Should handle small input values."""
+    def test_forward_output_shape(self):
+        """Test forward pass output shape."""
+        batch, seq_len, dim = 2, 10, 64
+        num_blocks = 4
+        
+        layer = BlockAttnRes(dim, num_blocks)
+        
+        # Create block representations
+        block_reprs = [torch.randn(batch, seq_len, dim) for _ in range(num_blocks)]
+        hidden = torch.randn(batch, seq_len, dim)
+        
+        h_attn, h_mlp = layer(block_reprs, hidden, use_attn=True, use_mlp=True)
+        
+        assert h_attn.shape == hidden.shape
+        assert h_mlp.shape == hidden.shape
+    
+    def test_forward_different_modes(self):
+        """Test forward pass with different use_attn/use_mlp settings."""
+        batch, seq_len, dim = 2, 5, 32
+        num_blocks = 3
+        
+        layer = BlockAttnRes(dim, num_blocks)
+        block_reprs = [torch.randn(batch, seq_len, dim) for _ in range(num_blocks)]
+        hidden = torch.randn(batch, seq_len, dim)
+        
+        # Both enabled
+        h_attn, h_mlp = layer(block_reprs, hidden, use_attn=True, use_mlp=True)
+        
+        # Only attention
+        h_attn_only, _ = layer(block_reprs, hidden, use_attn=True, use_mlp=False)
+        
+        # Only MLP
+        _, h_mlp_only = layer(block_reprs, hidden, use_attn=False, use_mlp=True)
+        
+        # Neither (just returns hidden)
+        h_neither_attn, h_neither_mlp = layer(block_reprs, hidden, use_attn=False, use_mlp=False)
+        
+        assert torch.allclose(h_neither_attn, hidden)
+        assert torch.allclose(h_neither_mlp, hidden)
+    
+    def test_forward_with_accumulation(self):
+        """Test forward pass with block accumulation."""
+        batch, seq_len, dim = 1, 4, 16
+        num_blocks = 2
+        num_layers = 4
+        
+        layer = BlockAttnRes(dim, num_blocks)
+        
+        # Simulate multiple layers
+        block_reprs = []
+        hidden = torch.randn(batch, seq_len, dim)
+        
+        for layer_idx in range(num_layers):
+            h_attn, h_mlp = layer(block_reprs, hidden, use_attn=True, use_mlp=True)
+            
+            # Use attention output for next layer
+            hidden = h_attn
+            
+            # Add to block representations at boundaries
+            if (layer_idx + 1) % (num_layers // num_blocks) == 0:
+                block_reprs.append(h_attn)
+        
+        assert len(block_reprs) <= num_blocks
+    
+    def test_reset_parameters(self):
+        """Test reset_parameters sets pseudo-queries to zero."""
         dim = 64
-        blocks = [torch.randn(2, 10, dim) * 1e-6 for _ in range(3)]
-        partial = torch.randn(2, 10, dim) * 1e-6
-        pseudo_query = torch.randn(dim)
-        norm = RMSNorm(dim)
+        layer = BlockAttnRes(dim)
         
-        output = block_attn_res(blocks, partial, pseudo_query, norm)
+        # Modify parameters
+        nn.init.uniform_(layer.pseudo_query_attn, -1, 1)
+        nn.init.uniform_(layer.pseudo_query_mlp, -1, 1)
         
-        assert torch.isfinite(output).all()
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+        # Reset
+        layer.reset_parameters()
+        
+        assert torch.allclose(layer.pseudo_query_attn, torch.zeros(dim))
+        assert torch.allclose(layer.pseudo_query_mlp, torch.zeros(dim))

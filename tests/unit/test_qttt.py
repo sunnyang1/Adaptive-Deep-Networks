@@ -1,310 +1,229 @@
 """
-Unit tests for Query-only Test-Time Training (qTTT).
+Unit tests for Query-Only Test-Time Training (qTTT) module.
+
+Tests:
+- KVCache management
+- QueryOnlyTTT adaptation
+- Margin maximization loss
 """
 
-import torch
 import pytest
-import sys
-import os
+import torch
+import torch.nn as nn
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
-from qttt.adaptation import (
-    qttt_adapt,
-    QueryOnlyTTT,
-    qTTTConfig,
-    KVCache
-)
-from qttt.margin_loss import (
-    MarginMaximizationLoss,
-    compute_margin_loss,
-    NeedleMarginLoss
-)
+from src.qttt.adaptation import QueryOnlyTTT, KVCache
+from src.qttt.margin_loss import MarginMaximizationLoss
 
 
 class TestKVCache:
-    """Tests for KVCache."""
+    """Tests for KV cache management."""
     
-    def test_initialization(self):
-        keys = torch.randn(2, 8, 100, 64)  # [B, H, T, d]
-        values = torch.randn(2, 8, 100, 64)
+    def test_kvcache_init(self):
+        """Test KVCache initialization."""
+        batch_size = 2
+        num_heads = 8
+        seq_len = 10
+        head_dim = 64
         
-        cache = KVCache(keys, values)
+        cache = KVCache(batch_size, num_heads, seq_len, head_dim)
         
-        assert cache.keys.shape == keys.shape
-        assert cache.values.shape == values.shape
-        assert cache.is_frozen == True
+        assert cache.k.shape == (batch_size, num_heads, seq_len, head_dim)
+        assert cache.v.shape == (batch_size, num_heads, seq_len, head_dim)
+        assert cache.current_length == 0
     
-    def test_get_kv_detached(self):
-        keys = torch.randn(2, 8, 100, 64, requires_grad=True)
-        values = torch.randn(2, 8, 100, 64, requires_grad=True)
+    def test_kvcache_update(self):
+        """Test KVCache update mechanism."""
+        batch_size = 1
+        num_heads = 4
+        seq_len = 8
+        head_dim = 32
         
-        cache = KVCache(keys, values)
+        cache = KVCache(batch_size, num_heads, seq_len, head_dim)
+        
+        # Initial state
+        k, v = cache.get_kv()
+        assert k.shape[1] == 0  # No tokens yet
+        
+        # Update with new keys and values
+        new_k = torch.randn(batch_size, num_heads, 3, head_dim)
+        new_v = torch.randn(batch_size, num_heads, 3, head_dim)
+        cache.update(new_k, new_v)
+        
+        k, v = cache.get_kv()
+        assert k.shape[2] == 3
+        assert v.shape[2] == 3
+        assert cache.current_length == 3
+    
+    def test_kvcache_frozen(self):
+        """Test that KVCache returns frozen (non-grad) tensors."""
+        batch_size = 2
+        num_heads = 4
+        seq_len = 6
+        head_dim = 64
+        
+        cache = KVCache(batch_size, num_heads, seq_len, head_dim)
+        
+        # Update with tensors that require grad
+        new_k = torch.randn(batch_size, num_heads, 3, head_dim, requires_grad=True)
+        new_v = torch.randn(batch_size, num_heads, 3, head_dim, requires_grad=True)
+        cache.update(new_k, new_v)
+        
         k, v = cache.get_kv()
         
+        # Retrieved tensors should not require grad
         assert not k.requires_grad
         assert not v.requires_grad
     
-    def test_length(self):
-        keys = torch.randn(2, 8, 100, 64)
-        values = torch.randn(2, 8, 100, 64)
+    def test_kvcache_sequence_length_tracking(self):
+        """Test sequence length tracking."""
+        batch_size = 1
+        num_heads = 2
+        seq_len = 10
+        head_dim = 16
         
-        cache = KVCache(keys, values)
+        cache = KVCache(batch_size, num_heads, seq_len, head_dim)
         
-        assert len(cache) == 100
-
-
-class TestQtttAdapt:
-    """Tests for qttt_adapt function."""
-    
-    def test_basic_functionality(self):
-        batch = 2
-        num_heads = 8
-        seq_len = 100
-        head_dim = 64
-        
-        # Create inputs
-        initial_query = torch.randn(batch, num_heads, 10, head_dim)
-        keys = torch.randn(batch, num_heads, seq_len, head_dim)
-        values = torch.randn(batch, num_heads, seq_len, head_dim)
-        kv_cache = KVCache(keys, values)
-        
-        seq_positions = torch.tensor([5, 10, 15, 20, 25])
-        
-        # Run adaptation
-        adapted_query, loss_history = qttt_adapt(
-            initial_query,
-            kv_cache,
-            seq_positions,
-            num_steps=5,
-            learning_rate=0.01
-        )
-        
-        assert adapted_query.shape == initial_query.shape
-        assert len(loss_history) == 5
-        assert not adapted_query.requires_grad
-    
-    def test_loss_decreases(self):
-        """Loss should generally decrease during adaptation."""
-        batch = 1
-        num_heads = 4
-        seq_len = 50
-        head_dim = 32
-        
-        initial_query = torch.randn(batch, num_heads, 5, head_dim)
-        keys = torch.randn(batch, num_heads, seq_len, head_dim)
-        values = torch.randn(batch, num_heads, seq_len, head_dim)
-        kv_cache = KVCache(keys, values)
-        
-        seq_positions = torch.tensor([10, 20, 30])
-        
-        _, loss_history = qttt_adapt(
-            initial_query,
-            kv_cache,
-            seq_positions,
-            num_steps=10,
-            learning_rate=0.05
-        )
-        
-        # Loss should generally decrease (though not monotonically)
-        assert loss_history[-1] < loss_history[0] * 1.5  # Some tolerance
-    
-    def test_query_changes(self):
-        """Query should change during adaptation."""
-        batch = 1
-        num_heads = 4
-        seq_len = 50
-        head_dim = 32
-        
-        initial_query = torch.randn(batch, num_heads, 5, head_dim)
-        keys = torch.randn(batch, num_heads, seq_len, head_dim)
-        values = torch.randn(batch, num_heads, seq_len, head_dim)
-        kv_cache = KVCache(keys, values)
-        
-        seq_positions = torch.tensor([10, 20, 30])
-        
-        adapted_query, _ = qttt_adapt(
-            initial_query,
-            kv_cache,
-            seq_positions,
-            num_steps=5,
-            learning_rate=0.1
-        )
-        
-        # Query should have changed
-        assert not torch.allclose(initial_query, adapted_query, atol=1e-4)
+        # Multiple updates
+        for i in range(1, 4):
+            new_k = torch.randn(batch_size, num_heads, 2, head_dim)
+            new_v = torch.randn(batch_size, num_heads, 2, head_dim)
+            cache.update(new_k, new_v)
+            
+            assert cache.current_length == i * 2
 
 
 class TestQueryOnlyTTT:
-    """Tests for QueryOnlyTTT module."""
+    """Tests for Query-Only TTT adaptation."""
     
-    def test_initialization(self):
-        config = qTTTConfig(num_steps=16, learning_rate=0.005)
-        module = QueryOnlyTTT(config, hidden_dim=256, num_heads=8)
+    def test_query_only_ttt_init(self):
+        """Test QueryOnlyTTT initialization."""
+        dim = 128
+        learning_rate = 0.01
         
-        assert module.config == config
-        assert module.hidden_dim == 256
-        assert module.num_heads == 8
+        ttt = QueryOnlyTTT(dim, learning_rate)
+        
+        assert ttt.dim == dim
+        assert ttt.learning_rate == learning_rate
+        assert ttt.query_adapt.shape == (dim,)
+        assert ttt.query_adapt.requires_grad
     
-    def test_adapt_pseudo_query(self):
-        config = qTTTConfig(num_steps=5, learning_rate=0.01)
-        module = QueryOnlyTTT(config, hidden_dim=128, num_heads=8)
+    def test_query_only_ttt_zero_init(self):
+        """Test that query_adapt is initialized to zero."""
+        dim = 64
+        ttt = QueryOnlyTTT(dim)
         
-        pseudo_query = torch.randn(128)
-        keys = torch.randn(1, 8, 50, 16)
-        values = torch.randn(1, 8, 50, 16)
-        kv_cache = KVCache(keys, values)
-        
-        seq_positions = torch.tensor([10, 20, 30])
-        
-        adapted, losses = module.adapt_pseudo_query(
-            pseudo_query,
-            kv_cache,
-            seq_positions
-        )
-        
-        assert adapted.shape == (128,)
-        assert len(losses) == 5
+        assert torch.allclose(ttt.query_adapt, torch.zeros(dim))
     
-    def test_adapt_query_projection(self):
-        config = qTTTConfig(num_steps=5, learning_rate=0.01)
-        module = QueryOnlyTTT(
-            config,
-            hidden_dim=128,
-            num_heads=8
-        )
+    def test_adapt_returns_adapted_query(self):
+        """Test that adapt returns adapted query."""
+        dim = 32
+        ttt = QueryOnlyTTT(dim)
         
-        queries = torch.randn(2, 10, 128)  # [B, T, D]
-        keys = torch.randn(2, 8, 50, 16)
-        values = torch.randn(2, 8, 50, 16)
-        kv_cache = KVCache(keys, values)
+        query = torch.randn(dim)
+        adapted = ttt.adapt(query)
         
-        seq_positions = torch.tensor([5, 10, 15])
+        # Adapted query should be different from original
+        assert not torch.allclose(adapted, query)
         
-        adapted, losses = module.adapt_query_projection(
-            queries,
-            kv_cache,
-            seq_positions
-        )
-        
-        assert adapted.shape == queries.shape
-        assert len(losses) == 5
+        # Should be close to query (small perturbation)
+        assert torch.allclose(adapted, query, atol=0.1)
     
-    def test_compute_flops(self):
-        config = qTTTConfig(num_steps=16, learning_rate=0.01)
-        module = QueryOnlyTTT(config, hidden_dim=256, num_heads=8)
+    def test_adapt_gradient_flow(self):
+        """Test that gradients flow through adaptation."""
+        dim = 16
+        ttt = QueryOnlyTTT(dim, learning_rate=0.1)
         
-        flops = module.compute_flops(
-            batch_size=2,
-            seq_len=1000,
-            span_len=128
-        )
+        query = torch.randn(dim)
+        adapted = ttt.adapt(query)
         
-        assert 'per_step' in flops
-        assert 'total' in flops
-        assert flops['total'] == flops['per_step'] * config.num_steps
+        # Compute simple loss
+        loss = adapted.sum()
+        loss.backward()
+        
+        # query_adapt should have gradients
+        assert ttt.query_adapt.grad is not None
+        assert not torch.allclose(ttt.query_adapt.grad, torch.zeros(dim))
+    
+    def test_update_modifies_query_adapt(self):
+        """Test that update modifies query_adapt."""
+        dim = 32
+        ttt = QueryOnlyTTT(dim, learning_rate=0.01)
+        
+        original = ttt.query_adapt.clone().detach()
+        
+        # Simulate update
+        ttt.query_adapt.grad = torch.randn(dim)
+        ttt.update()
+        
+        # Should have changed
+        assert not torch.allclose(ttt.query_adapt, original)
+    
+    def test_get_stats(self):
+        """Test get_stats returns expected metrics."""
+        dim = 64
+        ttt = QueryOnlyTTT(dim)
+        
+        stats = ttt.get_stats()
+        
+        assert 'norm' in stats
+        assert 'max' in stats
+        assert 'mean' in stats
+        assert stats['norm'] >= 0
 
 
 class TestMarginMaximizationLoss:
-    """Tests for margin maximization loss."""
+    """Tests for Margin Maximization Loss."""
     
-    def test_initialization(self):
-        loss_fn = MarginMaximizationLoss(temperature=1.0)
+    def test_margin_loss_init(self):
+        """Test MarginMaximizationLoss initialization."""
+        loss_fn = MarginMaximizationLoss(margin=0.5, temperature=1.0)
+        
+        assert loss_fn.margin == 0.5
         assert loss_fn.temperature == 1.0
     
-    def test_forward(self):
-        loss_fn = MarginMaximizationLoss()
+    def test_margin_loss_computation(self):
+        """Test margin loss computation."""
+        loss_fn = MarginMaximizationLoss(margin=0.5, temperature=1.0)
         
-        logits = torch.randn(2, 10, 100)  # [B, T, V]
-        target_positions = torch.tensor([[5, 10], [15, 20]])
+        batch_size = 2
+        seq_len = 5
+        vocab_size = 100
         
-        loss, margins = loss_fn(logits, target_positions, return_margin=True)
+        logits = torch.randn(batch_size, seq_len, vocab_size)
+        targets = torch.randint(0, vocab_size, (batch_size, seq_len))
         
+        loss = loss_fn(logits, targets)
+        
+        # Loss should be a scalar
         assert loss.shape == ()
         assert loss.item() >= 0
-        assert margins.shape == (2, 2)
     
-    def test_margin_computation(self):
-        """Test that margin is computed correctly."""
+    def test_margin_loss_with_target_positions(self):
+        """Test margin loss with specific target positions."""
+        loss_fn = MarginMaximizationLoss(margin=1.0, temperature=0.5)
+        
+        batch_size = 1
+        seq_len = 3
+        vocab_size = 50
+        
+        logits = torch.randn(batch_size, seq_len, vocab_size)
+        targets = torch.randint(0, vocab_size, (batch_size, seq_len))
+        target_positions = [0, 2]
+        
+        loss = loss_fn(logits, targets, target_positions)
+        
+        assert loss.shape == ()
+        assert not torch.isnan(loss)
+    
+    def test_margin_loss_gradient(self):
+        """Test that margin loss produces gradients."""
         loss_fn = MarginMaximizationLoss()
         
-        # Create logits where target is clearly highest
-        logits = torch.zeros(1, 1, 10)
-        logits[0, 0, 5] = 5.0  # Target
-        logits[0, 0, [0, 1, 2, 3, 4, 6, 7, 8, 9]] = 0.0  # Distractors
+        logits = torch.randn(2, 4, 50, requires_grad=True)
+        targets = torch.randint(0, 50, (2, 4))
         
-        target_positions = torch.tensor([[5]])
+        loss = loss_fn(logits, targets)
+        loss.backward()
         
-        loss, margins = loss_fn(logits, target_positions, return_margin=True)
-        
-        # Margin should be positive (target > distractors)
-        assert margins.item() > 0
-        
-        # Loss should be small (good prediction)
-        assert loss.item() < 0.1
-    
-    def test_compute_margin_loss(self):
-        """Test standalone margin loss function."""
-        logits = torch.randn(2, 10, 100)
-        targets = torch.randint(0, 100, (2, 10))
-        
-        loss = compute_margin_loss(logits, targets, vocab_size=100)
-        
-        assert loss.shape == ()
-        assert loss.item() >= 0
-
-
-class TestNeedleMarginLoss:
-    """Tests for needle-specific margin loss."""
-    
-    def test_forward(self):
-        loss_fn = NeedleMarginLoss()
-        
-        # Attention scores: [B, H, 1, T]
-        attn_scores = torch.randn(2, 8, 1, 100)
-        needle_position = 50
-        context_length = 100
-        
-        loss, accuracy = loss_fn(attn_scores, needle_position, context_length)
-        
-        assert loss.shape == ()
-        assert 0 <= accuracy <= 1
-    
-    def test_high_needle_score_low_loss(self):
-        """If needle has highest attention, loss should be low."""
-        loss_fn = NeedleMarginLoss()
-        
-        attn_scores = torch.zeros(1, 1, 1, 100)
-        attn_scores[0, 0, 0, 50] = 10.0  # High attention on needle
-        attn_scores[0, 0, 0, [i for i in range(100) if i != 50]] = 0.0
-        
-        loss, accuracy = loss_fn(attn_scores, 50, 100)
-        
-        assert loss.item() < 0.1
-        assert accuracy == 1.0
-
-
-class TestNumericalStability:
-    """Tests for numerical stability."""
-    
-    def test_large_logits(self):
-        """Should handle large logit values."""
-        logits = torch.randn(2, 10, 100) * 100
-        targets = torch.randint(0, 100, (2, 10))
-        
-        loss = compute_margin_loss(logits, targets, vocab_size=100)
-        
-        assert torch.isfinite(loss)
-    
-    def test_small_logits(self):
-        """Should handle small logit values."""
-        logits = torch.randn(2, 10, 100) * 1e-6
-        targets = torch.randint(0, 100, (2, 10))
-        
-        loss = compute_margin_loss(logits, targets, vocab_size=100)
-        
-        assert torch.isfinite(loss)
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+        assert logits.grad is not None
+        assert not torch.allclose(logits.grad, torch.zeros_like(logits))

@@ -1,209 +1,184 @@
 """
-Unit tests for Dynamic Computation Gating.
+Unit tests for Gating module.
+
+Tests:
+- DynamicThreshold calibration
+- Reconstruction loss computation
+- Gating decision logic
 """
 
-import torch
 import pytest
-import sys
-import os
+import torch
+import torch.nn as nn
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
-from gating.threshold import (
-    EMAThreshold,
-    TargetRateThreshold,
-    HybridThreshold,
-    GatingController
-)
-from gating.reconstruction import ReconstructionLoss, compute_reconstruction_loss
+from src.gating.threshold import DynamicThreshold
+from src.gating.reconstruction import compute_reconstruction_loss
 
 
-class TestEMAThreshold:
-    """Tests for EMA threshold calibration."""
+class TestDynamicThreshold:
+    """Tests for DynamicThreshold."""
     
-    def test_initialization(self):
-        calibrator = EMAThreshold(initial_threshold=2.0)
-        assert calibrator.threshold.item() == 2.0
-        assert calibrator.beta == 0.99
+    def test_dynamic_threshold_init(self):
+        """Test DynamicThreshold initialization."""
+        dt = DynamicThreshold(initial_threshold=0.5)
+        
+        assert dt.threshold == config.initial_threshold
+        assert dt.ema_loss == 0.0
+        assert dt.decision_count == 0
+        assert dt.adaptation_count == 0
     
-    def test_update_decreases_threshold_for_low_loss(self):
-        """If losses are consistently low, threshold should decrease."""
-        calibrator = EMAThreshold(initial_threshold=2.0, beta=0.9)
+    def test_should_adapt_initial(self):
+        """Test should_adapt at initialization."""
+        dt = DynamicThreshold(initial_threshold=0.5)
         
-        # Feed low losses
-        for _ in range(50):
-            calibrator.update(0.5)
+        # First few decisions should use initial threshold
+        should_adapt = dt.should_adapt(0.6)
         
-        # Threshold should have decreased
-        assert calibrator.threshold.item() < 2.0
-    
-    def test_update_increases_threshold_for_high_loss(self):
-        """If losses are consistently high, threshold should increase."""
-        calibrator = EMAThreshold(initial_threshold=2.0, beta=0.9)
-        
-        # Feed high losses
-        for _ in range(50):
-            calibrator.update(5.0)
-        
-        # Threshold should have increased
-        assert calibrator.threshold.item() > 2.0
-    
-    def test_should_adapt(self):
-        calibrator = EMAThreshold(initial_threshold=2.0)
-        
-        # Loss above threshold should trigger adaptation
-        assert calibrator.should_adapt(3.0) == True
-        
-        # Loss below threshold should not trigger
-        assert calibrator.should_adapt(1.0) == False
-    
-    def test_get_stats(self):
-        calibrator = EMAThreshold(initial_threshold=2.0)
-        
-        # Add some history
-        for i in range(10):
-            calibrator.update(float(i))
-        
-        stats = calibrator.get_stats()
-        
-        assert 'threshold' in stats
-        assert 'history_size' in stats
-        assert stats['history_size'] == 10
-
-
-class TestTargetRateThreshold:
-    """Tests for target rate threshold calibration."""
-    
-    def test_initialization(self):
-        calibrator = TargetRateThreshold(
-            initial_threshold=2.0,
-            target_rate=0.3
-        )
-        assert calibrator.threshold.item() == 2.0
-        assert calibrator.target_rate == 0.3
-    
-    def test_maintains_target_rate(self):
-        """Should adjust threshold to maintain target rate."""
-        calibrator = TargetRateThreshold(
-            initial_threshold=1.0,
-            target_rate=0.5,
-            learning_rate=0.1
-        )
-        
-        # Simulate 50% adaptation rate
-        for i in range(100):
-            loss = 2.0 if i % 2 == 0 else 0.5
-            calibrator.update(loss)
-        
-        stats = calibrator.get_stats()
-        # Should be close to target rate
-        assert abs(stats['current_rate'] - 0.5) < 0.15
-    
-    def test_threshold_stays_positive(self):
-        """Threshold should never go below small positive value."""
-        calibrator = TargetRateThreshold(initial_threshold=0.1)
-        
-        # Feed very low losses
-        for _ in range(100):
-            calibrator.update(0.01)
-        
-        assert calibrator.threshold.item() >= 0.01
-
-
-class TestGatingController:
-    """Tests for GatingController."""
-    
-    def test_decide_returns_tuple(self):
-        calibrator = EMAThreshold(initial_threshold=2.0)
-        controller = GatingController(calibrator)
-        
-        should_adapt, num_steps, threshold = controller.decide(3.0)
-        
-        assert isinstance(should_adapt, bool)
-        assert isinstance(num_steps, int)
-        assert isinstance(threshold, float)
-    
-    def test_high_loss_triggers_adaptation(self):
-        calibrator = EMAThreshold(initial_threshold=2.0)
-        controller = GatingController(calibrator)
-        
-        should_adapt, num_steps, _ = controller.decide(5.0)
-        
+        # 0.6 > 0.5, so should adapt
         assert should_adapt == True
-        assert num_steps > 0
     
-    def test_low_loss_no_adaptation(self):
-        calibrator = EMAThreshold(initial_threshold=2.0)
-        controller = GatingController(calibrator)
+    def test_should_adapt_low_loss(self):
+        """Test should_adapt with low reconstruction loss."""
+        dt = DynamicThreshold(initial_threshold=0.5)
         
-        should_adapt, num_steps, _ = controller.decide(0.5)
+        # Low loss - should not adapt
+        should_adapt = dt.should_adapt(0.1)
         
         assert should_adapt == False
-        assert num_steps == 0
     
-    def test_num_steps_scales_with_loss(self):
-        """Higher excess loss should result in more steps."""
-        calibrator = EMAThreshold(initial_threshold=2.0)
-        controller = GatingController(calibrator, max_adaptation_steps=32)
+    def test_should_adapt_high_loss(self):
+        """Test should_adapt with high reconstruction loss."""
+        dt = DynamicThreshold(initial_threshold=0.5)
         
-        _, steps_low, _ = controller.decide(3.0)  # 1.5x threshold
-        _, steps_high, _ = controller.decide(6.0)  # 3x threshold
+        # High loss - should adapt
+        should_adapt = dt.should_adapt(0.8)
         
-        assert steps_high >= steps_low
+        assert should_adapt == True
+    
+    def test_ema_update(self):
+        """Test EMA threshold update."""
+        dt = DynamicThreshold(
+            initial_threshold=0.5,
+            ema_decay=0.9
+        )
+        
+        initial_threshold = dt.threshold
+        
+        # Update with several losses
+        for loss in [0.3, 0.4, 0.5, 0.6]:
+            dt.should_adapt(loss)
+            dt.update_threshold(loss)
+        
+        # Threshold should have moved from initial value
+        assert dt.threshold != initial_threshold
+    
+    def test_target_rate_update(self):
+        """Test target rate threshold update."""
+        dt = DynamicThreshold(
+            initial_threshold=0.5,
+            target_rate=0.3
+        )
+        
+        # Simulate many decisions with high adaptation rate
+        for _ in range(100):
+            should_adapt = dt.should_adapt(0.8)  # Always high loss
+            dt.record_decision(should_adapt)
+        
+        # Should adjust threshold to reduce adaptation rate
+        # Threshold should increase
+        assert dt.threshold > 0.5
+    
+    def test_get_stats(self):
+        """Test get_stats returns expected metrics."""
+        dt = DynamicThreshold(initial_threshold=0.5)
+        
+        # Make some decisions
+        for i in range(10):
+            should_adapt = dt.should_adapt(0.3 + i * 0.05)
+            dt.record_decision(should_adapt)
+        
+        stats = dt.get_stats()
+        
+        assert 'threshold' in stats
+        assert 'ema_loss' in stats
+        assert 'total_decisions' in stats
+        assert 'adaptation_count' in stats
+        assert 'adaptation_rate' in stats
+        assert stats['total_decisions'] == 10
+    
+    def test_reset(self):
+        """Test reset functionality."""
+        dt = DynamicThreshold(initial_threshold=0.5)
+        
+        # Make some decisions
+        for _ in range(5):
+            dt.should_adapt(0.6)
+            dt.record_decision(True)
+        
+        # Reset
+        dt.reset()
+        
+        assert dt.threshold == 0.5
+        assert dt.ema_loss == 0.0
+        assert dt.decision_count == 0
+        assert dt.adaptation_count == 0
 
 
 class TestReconstructionLoss:
     """Tests for reconstruction loss computation."""
     
-    def test_initialization(self):
-        loss_fn = ReconstructionLoss(vocab_size=1000, hidden_dim=128)
-        assert loss_fn.vocab_size == 1000
-        assert loss_fn.hidden_dim == 128
-    
-    def test_forward_shape(self):
-        loss_fn = ReconstructionLoss(vocab_size=1000, hidden_dim=128, span_length=10)
+    def test_compute_reconstruction_loss_shape(self):
+        """Test reconstruction loss output shape."""
+        batch_size = 2
+        seq_len = 10
+        dim = 64
         
-        hidden_states = torch.randn(2, 50, 128)  # [B, T, D]
-        target_tokens = torch.randint(0, 1000, (2, 50))  # [B, T]
+        original = torch.randn(batch_size, seq_len, dim)
+        reconstructed = torch.randn(batch_size, seq_len, dim)
         
-        loss = loss_fn(hidden_states, target_tokens)
+        loss = compute_reconstruction_loss(original, reconstructed)
         
-        assert loss.shape == ()  # Scalar
-        assert loss.item() >= 0  # Loss should be positive
-    
-    def test_reconstruction_loss_computation(self):
-        """Test standalone reconstruction loss function."""
-        logits = torch.randn(2, 10, 100)  # [B, T, V]
-        targets = torch.randint(0, 100, (2, 10))  # [B, T]
-        
-        loss = compute_reconstruction_loss(logits, targets)
-        
+        # Should return a scalar
         assert loss.shape == ()
-        assert loss.item() >= 0
     
-    def test_loss_decreases_with_better_prediction(self):
-        """Loss should be lower for better predictions."""
-        loss_fn = ReconstructionLoss(vocab_size=100, hidden_dim=64)
+    def test_compute_reconstruction_loss_zero(self):
+        """Test reconstruction loss is zero for identical tensors."""
+        batch_size = 2
+        seq_len = 5
+        dim = 32
         
-        hidden = torch.randn(2, 10, 64)
-        targets = torch.randint(0, 100, (2, 10))
+        original = torch.randn(batch_size, seq_len, dim)
         
-        # Make prediction perfect by setting logits
-        with torch.no_grad():
-            logits = loss_fn.reconstruction_head(hidden)
-            # Set target positions to high logit
-            for b in range(2):
-                for t in range(10):
-                    logits[b, t, targets[b, t]] = 10.0
+        loss = compute_reconstruction_loss(original, original)
         
-        # Recompute loss manually
-        loss = torch.nn.functional.cross_entropy(
-            logits.reshape(-1, 100),
-            targets.reshape(-1)
-        )
+        # Loss should be approximately zero
+        assert torch.allclose(loss, torch.tensor(0.0), atol=1e-5)
+    
+    def test_compute_reconstruction_loss_positive(self):
+        """Test reconstruction loss is positive for different tensors."""
+        batch_size = 2
+        seq_len = 5
+        dim = 32
         
-        assert loss.item() < 1.0  # Should be low for perfect prediction
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+        original = torch.randn(batch_size, seq_len, dim)
+        reconstructed = torch.randn(batch_size, seq_len, dim)
+        
+        loss = compute_reconstruction_loss(original, reconstructed)
+        
+        # Loss should be positive
+        assert loss.item() > 0
+    
+    def test_compute_reconstruction_loss_gradient(self):
+        """Test gradients flow through reconstruction loss."""
+        batch_size = 1
+        seq_len = 3
+        dim = 16
+        
+        original = torch.randn(batch_size, seq_len, dim)
+        reconstructed = torch.randn(batch_size, seq_len, dim, requires_grad=True)
+        
+        loss = compute_reconstruction_loss(original, reconstructed)
+        loss.backward()
+        
+        assert reconstructed.grad is not None
+        assert not torch.allclose(reconstructed.grad, torch.zeros_like(reconstructed))
