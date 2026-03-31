@@ -21,17 +21,16 @@ from typing import Dict, Any
 
 # Add project root to path
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_dir = os.path.dirname(script_dir)
+project_dir = os.path.dirname(os.path.dirname(script_dir))
 sys.path.insert(0, project_dir)
-sys.path.insert(0, os.path.join(project_dir, 'src'))
 
 import torch
 import torch.nn as nn
 import numpy as np
 
-from models.configs import get_config, get_model_size_params, print_config
-from models.adaptive_transformer import AdaptiveTransformer
-from benchmarks.flop_analysis import EfficiencyAnalyzer, run_flop_analysis
+from src.models.configs import get_config, get_model_size_params, print_config
+from src.models.adaptive_transformer import AdaptiveTransformer
+from src.benchmarks.flop_analysis import EfficiencyAnalyzer, run_flop_analysis
 
 
 class SimpleNeedleEvaluator:

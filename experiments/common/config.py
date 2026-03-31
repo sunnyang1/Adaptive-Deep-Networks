@@ -39,26 +39,30 @@ class ModelSizeConfig:
 
 
 # Predefined model sizes
+# Optimized for AttnRes (Paper §5.4.1): d_model/L_b ≈ 45, H/L_b ≈ 0.3
+# Small: 32L/1408H/8Hd = 1.1B, d/L=44.0, H/L=0.25
+# Medium: 56L/2496H/16Hd = 5.7B, d/L=44.6, H/L=0.29
+# Large: 88L/4032H/18Hd = 23.0B, d/L=45.8, H/L=0.21
 MODEL_SIZES = {
     'small': ModelSizeConfig(
-        hidden_dim=2048,
+        hidden_dim=1408,
         num_layers=32,
-        num_heads=32,
+        num_heads=8,
         num_blocks=8,
         max_qttt_steps=16,
     ),
     'medium': ModelSizeConfig(
-        hidden_dim=4096,
-        num_layers=32,
-        num_heads=32,
+        hidden_dim=2496,
+        num_layers=56,
+        num_heads=16,
         num_blocks=8,
         max_qttt_steps=32,
     ),
     'large': ModelSizeConfig(
-        hidden_dim=5120,
-        num_layers=64,
-        num_heads=40,
-        num_blocks=16,
+        hidden_dim=4032,
+        num_layers=88,
+        num_heads=18,
+        num_blocks=11,
         max_qttt_steps=32,
         qttt_span_length=256,
     ),

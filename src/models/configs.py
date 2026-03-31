@@ -42,36 +42,61 @@ class ModelConfig:
 
 @dataclass  
 class AttnResSmallConfig(ModelConfig):
-    """1.5B parameter model (AttnRes-S)."""
+    """1.1B parameter model (AttnRes-S).
     
-    num_layers: int = 32
-    hidden_dim: int = 2048
-    num_heads: int = 32
-    num_blocks: int = 8
+    Architecture optimized based on Attention Residuals paper (§5.4.1):
+    - d_model/L_b ≈ 44 (close to optimal ~45 for AttnRes)
+    - H/L_b = 0.25 (close to optimal ~0.3)
+    - N=8 blocks (paper-recommended sweet spot, §5.3)
+    - Fixed at 32 layers for experimentation
+    
+    32L/1408H/8Hd = ~1.1B params, d_model/L_b=44.0, H/L_b=0.25
+    """
+    
+    num_layers: int = 32          # Fixed at 32 layers
+    hidden_dim: int = 1408        # 1408/32 = 44.0 (paper optimal ~45)
+    num_heads: int = 8            # 8/32 = 0.25 (close to paper optimal 0.3)
+    num_blocks: int = 8           # Paper: N=8 recovers most benefit
     max_qttt_steps: int = 16
     qttt_span_length: int = 128
 
 
 @dataclass
 class AttnResMediumConfig(ModelConfig):
-    """7B parameter model (AttnRes-M)."""
+    """5.7B parameter model (AttnRes-M).
     
-    num_layers: int = 32
-    hidden_dim: int = 4096
-    num_heads: int = 32
-    num_blocks: int = 8
+    Architecture optimized based on Attention Residuals paper (§5.4.1):
+    - d_model/L_b ≈ 44.6 (close to optimal ~45 for AttnRes)
+    - H/L_b = 0.29 (close to paper optimal ~0.3)
+    - N=8 blocks (paper-recommended sweet spot, §5.3)
+    
+    56L/2496H/16Hd = ~5.7B params, d_model/L_b=44.6, H/L_b=0.29
+    """
+    
+    num_layers: int = 56          # 56 layers
+    hidden_dim: int = 2496        # 2496/56 = 44.6 (paper optimal ~45)
+    num_heads: int = 16           # 16/56 = 0.29 (close to paper optimal 0.3)
+    num_blocks: int = 8           # Paper: N=8 recovers most benefit
     max_qttt_steps: int = 32
     qttt_span_length: int = 128
 
 
 @dataclass
 class AttnResLargeConfig(ModelConfig):
-    """50B parameter model (AttnRes-L)."""
+    """23B parameter model (AttnRes-L).
     
-    num_layers: int = 64
-    hidden_dim: int = 5120
-    num_heads: int = 40
-    num_blocks: int = 16
+    Architecture optimized based on Attention Residuals paper (§5.4.1):
+    - d_model/L_b ≈ 45.8 (close to optimal ~45 for AttnRes)
+    - H/L_b = 0.20 (lower than optimal ~0.3 but allows larger head dim)
+    - N=11 blocks (for 88 layers)
+    
+    88L/4032H/18Hd = ~23B params, d_model/L_b=45.8, H/L_b=0.20
+    """
+    
+    num_layers: int = 88          # 88 layers
+    hidden_dim: int = 4032        # 4032/88 = 45.8 (paper optimal ~45)
+    num_heads: int = 18           # 18/88 = 0.20
+    num_blocks: int = 11          # N=11 blocks, S=8 layers per block
     max_qttt_steps: int = 32
     qttt_span_length: int = 256
 

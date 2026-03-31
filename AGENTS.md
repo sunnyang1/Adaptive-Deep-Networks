@@ -24,19 +24,25 @@ This is the validation framework for the paper "Adaptive Deep Networks: Integrat
 
 ### Model Configurations
 
-| Size | Params | Layers | Hidden | Blocks |
-|------|--------|--------|--------|--------|
-| Small | 2.2B | 32 | 2048 | 8 |
-| Medium | 8.7B | 32 | 4096 | 8 |
-| Large | 27B | 64 | 5120 | 16 |
+| Size | Params | Layers | Hidden | Heads | Blocks | d_model/L_b | H/L_b |
+|------|--------|--------|--------|-------|--------|-------------|-------|
+| Small | 1.1B | 32 | 1408 | 8 | 8 | 44.0 | 0.25 |
+| Medium | 5.7B | 56 | 2496 | 16 | 8 | 44.6 | 0.29 |
+| Large | 23.0B | 88 | 4032 | 18 | 11 | 45.8 | 0.21 |
+
+> **Architecture Optimized for AttnRes (§5.4.1)**: Paper shows AttnRes shifts optimal `d_model/L_b` from ~60 (baseline) to ~45 (AttnRes), favoring deeper, narrower networks. Head ratio `H/L_b ≈ 0.3` is optimal for both.
 
 ## Key Design Decisions
 
 ### AttnRes
 
-- **Zero Initialization**: Pseudo-queries initialize to zero for training stability
+- **Zero Initialization**: Pseudo-queries initialize to zero for training stability (§5.3)
 - **Block Structure**: Reduces memory from O(Ld) to O(Nd)
 - **Two-Phase**: Phase 1 (parallel inter-block) + Phase 2 (sequential intra-block)
+- **Optimal Block Count**: N≈8 recovers most FullAttnRes benefit (§5.3 Fig 6)
+- **RMSNorm on Keys**: Critical for performance (without: +0.006/+0.004 loss)
+- **Single-Head Depth Attention**: Multi-head hurts performance (1.752 vs 1.746)
+- **Softmax over Sigmoid**: Competitive normalization forces sharper selection
 
 ### Gating
 

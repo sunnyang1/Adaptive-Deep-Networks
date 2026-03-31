@@ -116,42 +116,42 @@ def main():
     print("Adaptive Deep Networks - 参数量精确计算")
     print("=" * 70)
     
-    # Small Model (1.5B)
+    # Small Model (1.1B) - Optimized for AttnRes: 32L/1408H/8Hd
     print("\n" + "=" * 70)
     print("【Small Model】")
     small_config = ModelConfig(
         vocab_size=32000,
         num_layers=32,
-        hidden_dim=2048,
-        num_heads=32,
+        hidden_dim=1408,
+        num_heads=8,
         mlp_ratio=4,
         num_blocks=8
     )
     small_params = calculate_params(small_config)
     
-    # Medium Model (7B)
+    # Medium Model (5.7B) - Optimized for AttnRes: 56L/2496H/16Hd
     print("\n" + "=" * 70)
     print("【Medium Model】")
     medium_config = ModelConfig(
         vocab_size=32000,
-        num_layers=32,
-        hidden_dim=4096,
-        num_heads=32,
+        num_layers=56,
+        hidden_dim=2496,
+        num_heads=16,
         mlp_ratio=4,
         num_blocks=8
     )
     medium_params = calculate_params(medium_config)
     
-    # Large Model (50B)
+    # Large Model (23.0B) - Optimized for AttnRes: 88L/4032H/18Hd
     print("\n" + "=" * 70)
     print("【Large Model】")
     large_config = ModelConfig(
         vocab_size=32000,
-        num_layers=64,
-        hidden_dim=5120,
-        num_heads=40,
+        num_layers=88,
+        hidden_dim=4032,
+        num_heads=18,
         mlp_ratio=4,
-        num_blocks=16
+        num_blocks=11
     )
     large_params = calculate_params(large_config)
     
@@ -159,11 +159,13 @@ def main():
     print("\n" + "=" * 70)
     print("【总结对比】")
     print("=" * 70)
-    print(f"{'Model':<10} {'配置':<25} {'参数量':<15} {'论文标注'}")
+    print(f"{'Model':<10} {'配置':<30} {'参数量':<12} {'d_model/L_b':<12} {'H/L_b'}")
     print("-" * 70)
-    print(f"{'Small':<10} {f'32L, 2048H':<25} {f'{small_params/1e9:.2f}B':<15} {'1.5B'}")
-    print(f"{'Medium':<10} {f'32L, 4096H':<25} {f'{medium_params/1e9:.2f}B':<15} {'7B'}")
-    print(f"{'Large':<10} {f'64L, 5120H':<25} {f'{large_params/1e9:.2f}B':<15} {'50B'}")
+    print(f"{'Small':<10} {f'32L, 1408H, 8Hd':<30} {f'{small_params/1e9:.2f}B':<12} {f'{1408/32:.1f}':<12} {f'{8/32:.3f}'}")
+    print(f"{'Medium':<10} {f'56L, 2496H, 16Hd':<30} {f'{medium_params/1e9:.2f}B':<12} {f'{2496/56:.1f}':<12} {f'{16/56:.3f}'}")
+    print(f"{'Large':<10} {f'88L, 4032H, 18Hd':<30} {f'{large_params/1e9:.2f}B':<12} {f'{4032/88:.1f}':<12} {f'{18/88:.3f}'}")
+    print("-" * 70)
+    print("Architecture optimized for AttnRes (Paper §5.4.1): d_model/L_b ≈ 45, H/L_b ≈ 0.3")
     print("=" * 70)
     
     # 显存需求估算

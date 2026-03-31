@@ -281,8 +281,8 @@ def generate_report(results: Dict, config: Dict, output_dir: str):
 
 def main():
     parser = argparse.ArgumentParser(description='实验1: Representation Burial测量')
-    parser.add_argument('--num_layers', type=int, default=32, help='模型层数')
-    parser.add_argument('--d_model', type=int, default=4096, help='隐藏维度')
+    parser.add_argument('--num_layers', type=int, default=48, help='模型层数 (Small=48, Medium=56, Large=96)')
+    parser.add_argument('--d_model', type=int, default=2048, help='隐藏维度 (Small=2048, Medium=2688, Large=4224)')
     parser.add_argument('--num_samples', type=int, default=50, help='测试样本数')
     parser.add_argument('--seq_len', type=int, default=512, help='序列长度')
     parser.add_argument('--output_dir', type=str, default='experiments/results/exp1', help='输出目录')

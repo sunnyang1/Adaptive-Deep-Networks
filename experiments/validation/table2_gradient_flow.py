@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 
-def simulate_gradient_flow(arch_type, num_layers=32):
+def simulate_gradient_flow(arch_type, num_layers=48):
     """模拟不同架构的梯度流分布"""
     if arch_type == 'prenorm':
         # 高变异，早期梯度小，晚期梯度大

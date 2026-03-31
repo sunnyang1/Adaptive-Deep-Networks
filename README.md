@@ -78,6 +78,10 @@ python scripts/training/train_streaming.py --model-size small --max-steps 10000
 
 # Build and validate Small Model
 python scripts/model/build_and_benchmark_small.py
+
+# Run Small Model experiments (150M experimental or 1.1B full)
+python scripts/model/run_small_model_experiments.py --experimental
+python scripts/model/run_small_model_experiments.py --full  # Requires GPU
 ```
 
 ### Run Tests
@@ -250,11 +254,13 @@ for step in range(num_steps):
 
 ## Model Configurations
 
-| Config | Params | Layers | Hidden | Blocks | qTTT Steps |
-|--------|--------|--------|--------|--------|------------|
-| Small  | 2.2B   | 32     | 2048   | 8      | 16         |
-| Medium | 8.7B   | 32     | 4096   | 8      | 32         |
-| Large  | 27B    | 64     | 5120   | 16     | 32         |
+| Config | Params | Layers | Hidden | Heads | Blocks | qTTT Steps |
+|--------|--------|--------|--------|-------|--------|------------|
+| Small  | 1.1B   | 32     | 1408   | 8     | 8      | 16         |
+| Medium | 5.7B   | 56     | 2496   | 16    | 8      | 32         |
+| Large  | 23.0B  | 88     | 4032   | 18    | 11     | 32         |
+
+> **Architecture optimized for AttnRes** (Paper §5.4.1): d_model/L_b ≈ 45 and H/L_b ≈ 0.3
 
 ## Citation
 

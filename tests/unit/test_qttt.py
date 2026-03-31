@@ -25,48 +25,28 @@ class TestKVCache:
         seq_len = 10
         head_dim = 64
         
-        cache = KVCache(batch_size, num_heads, seq_len, head_dim)
+        # Create sample keys and values
+        keys = torch.randn(batch_size, num_heads, seq_len, head_dim)
+        values = torch.randn(batch_size, num_heads, seq_len, head_dim)
         
-        assert cache.k.shape == (batch_size, num_heads, seq_len, head_dim)
-        assert cache.v.shape == (batch_size, num_heads, seq_len, head_dim)
-        assert cache.current_length == 0
-    
-    def test_kvcache_update(self):
-        """Test KVCache update mechanism."""
-        batch_size = 1
-        num_heads = 4
-        seq_len = 8
-        head_dim = 32
+        cache = KVCache(keys, values)
         
-        cache = KVCache(batch_size, num_heads, seq_len, head_dim)
-        
-        # Initial state
-        k, v = cache.get_kv()
-        assert k.shape[1] == 0  # No tokens yet
-        
-        # Update with new keys and values
-        new_k = torch.randn(batch_size, num_heads, 3, head_dim)
-        new_v = torch.randn(batch_size, num_heads, 3, head_dim)
-        cache.update(new_k, new_v)
-        
-        k, v = cache.get_kv()
-        assert k.shape[2] == 3
-        assert v.shape[2] == 3
-        assert cache.current_length == 3
+        assert cache.keys.shape == (batch_size, num_heads, seq_len, head_dim)
+        assert cache.values.shape == (batch_size, num_heads, seq_len, head_dim)
+        assert len(cache) == seq_len
     
     def test_kvcache_frozen(self):
         """Test that KVCache returns frozen (non-grad) tensors."""
         batch_size = 2
         num_heads = 4
-        seq_len = 6
-        head_dim = 64
+        seq_len = 8
+        head_dim = 32
         
-        cache = KVCache(batch_size, num_heads, seq_len, head_dim)
+        # Create tensors that require grad
+        keys = torch.randn(batch_size, num_heads, seq_len, head_dim, requires_grad=True)
+        values = torch.randn(batch_size, num_heads, seq_len, head_dim, requires_grad=True)
         
-        # Update with tensors that require grad
-        new_k = torch.randn(batch_size, num_heads, 3, head_dim, requires_grad=True)
-        new_v = torch.randn(batch_size, num_heads, 3, head_dim, requires_grad=True)
-        cache.update(new_k, new_v)
+        cache = KVCache(keys, values)
         
         k, v = cache.get_kv()
         
@@ -74,22 +54,24 @@ class TestKVCache:
         assert not k.requires_grad
         assert not v.requires_grad
     
-    def test_kvcache_sequence_length_tracking(self):
-        """Test sequence length tracking."""
+    def test_kvcache_detached(self):
+        """Test that KVCache properly detaches tensors."""
         batch_size = 1
         num_heads = 2
-        seq_len = 10
+        seq_len = 5
         head_dim = 16
         
-        cache = KVCache(batch_size, num_heads, seq_len, head_dim)
+        keys = torch.randn(batch_size, num_heads, seq_len, head_dim)
+        values = torch.randn(batch_size, num_heads, seq_len, head_dim)
         
-        # Multiple updates
-        for i in range(1, 4):
-            new_k = torch.randn(batch_size, num_heads, 2, head_dim)
-            new_v = torch.randn(batch_size, num_heads, 2, head_dim)
-            cache.update(new_k, new_v)
-            
-            assert cache.current_length == i * 2
+        cache = KVCache(keys, values)
+        
+        # Modify original tensors
+        keys.add_(1.0)
+        
+        # Cache should still have original values (detached copy)
+        cached_keys, _ = cache.get_kv()
+        assert not torch.allclose(cached_keys, keys)
 
 
 class TestQueryOnlyTTT:
