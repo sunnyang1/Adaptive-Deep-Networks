@@ -67,11 +67,22 @@ python experiments/run_experiments_unified.py --category paper
 ### Training
 
 ```bash
-# Unified training script (works on all platforms)
-python scripts/training/train_refactored.py --model-size medium --epochs 3
+# Small Model (1.1B params) - CPU-friendly, 1 GPU
+python scripts/training/train_small.py --output-dir results/small --epochs 3
 
-# Multi-GPU distributed training
-torchrun --nproc_per_node=4 scripts/training/train_refactored.py --model-size medium --distributed
+# Medium Model (5.7B params) - Requires 1-4 GPUs
+python scripts/training/train_medium.py --output-dir results/medium --epochs 3
+
+# Large Model (23B params) - Requires 8+ GPUs with distributed training
+torchrun --nproc_per_node=8 scripts/training/train_large.py --output-dir results/large
+
+# Multi-GPU distributed training (Medium/Large)
+torchrun --nproc_per_node=4 scripts/training/train_medium.py --output-dir results/medium --distributed
+
+# With DeepSpeed ZeRO-3 (recommended for Large model)
+deepspeed --num_gpus=8 scripts/training/train_large.py \
+    --output-dir results/large \
+    --deepspeed configs/ds_config_h20.json
 
 # Streaming training (for limited disk space)
 python scripts/training/train_streaming.py --model-size small --max-steps 10000
