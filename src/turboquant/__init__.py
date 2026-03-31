@@ -1,34 +1,31 @@
 """
-TurboQuant V3: Refactored Implementation
+TurboQuant V3: Clean, Modular KV Cache Compression
 
-Clean, modular implementation of TurboQuant V3 compression.
-Based on community findings that QJL hurts attention quality.
+A refactored implementation based on community findings that QJL hurts
+attention quality. Uses MSE-only compression with per-vector normalization.
 
 Quick Start:
     >>> from turboquant import create_k4_v2
-    
-    >>> # Create compressor
+    >>> 
     >>> tq = create_k4_v2(head_dim=64)
-    >>> 
-    >>> # Fit on sample data
     >>> tq.fit(sample_keys, sample_values)
-    >>> 
-    >>> # Compress/decompress
     >>> compressed = tq.compress(keys, values)
     >>> keys_dq, values_dq = tq.decompress(compressed)
-    >>> 
-    >>> # Use as HF cache
+
+Recommended Configurations:
+    - create_k4_v2(): 4-bit keys, 2-bit values (~4.9x compression) ⭐ Recommended
+    - create_k3_v2(): 3-bit keys, 2-bit values (~3.0x compression)
+    - create_k2_v2(): 2-bit keys, 2-bit values (~7.1x compression, max memory)
+
+For HuggingFace Integration:
     >>> cache = tq.as_cache(residual_window=128)
     >>> model.generate(..., past_key_values=cache)
-
-Recommended Configs:
-    - create_k4_v2(): 4-bit K, 2-bit V (recommended, ~4.9x compression)
-    - create_k3_v2(): 3-bit K, 2-bit V (~3.0x compression)
-    - create_k2_v2(): 2-bit K, 2-bit V (~7.1x compression, max memory)
 """
 
+__version__ = '3.0.0'
+
 # ============================================================================
-# Core API (Recommended)
+# Main API (Recommended)
 # ============================================================================
 
 from .api import (
@@ -41,7 +38,7 @@ from .api import (
 )
 
 # ============================================================================
-# Low-level Components
+# Low-level Components (For Advanced Usage)
 # ============================================================================
 
 from .rotation import (
@@ -67,38 +64,11 @@ from .cache import (
 )
 
 # ============================================================================
-# Legacy Exports (Backward Compatibility)
+# Exports
 # ============================================================================
-
-# Keep old V3 imports working
-from .v3_improved import (
-    TurboQuantV3 as LegacyTurboQuantV3,
-    TurboQuantV3Config as LegacyTurboQuantV3Config,
-    create_v3_k4_v2 as legacy_create_v3_k4_v2,
-    create_v3_k3_v2 as legacy_create_v3_k3_v2,
-    MSECompressor as LegacyMSECompressor,
-    MSECompressorConfig as LegacyMSECompressorConfig,
-    LloydMaxQuantizerV3 as LegacyLloydMaxQuantizerV3,
-    RandomRotation as LegacyRandomRotation,
-    pack_bits as legacy_pack_bits,
-    unpack_bits as legacy_unpack_bits,
-)
-
-# Keep old unified API working
-from .core import (
-    TurboQuant,
-    TurboQuantConfig as LegacyTurboQuantConfig,
-    QuantMode,
-)
-
-# ============================================================================
-# Version
-# ============================================================================
-
-__version__ = '3.0.0'
 
 __all__ = [
-    # New API (Recommended)
+    # Main API
     'TurboQuantV3',
     'TurboQuantConfig',
     'create_k4_v2',
@@ -106,7 +76,7 @@ __all__ = [
     'create_k2_v2',
     'RECOMMENDED',
     
-    # Low-level Components
+    # Components
     'RandomRotation',
     'fwht',
     'fwht_inverse',
@@ -117,13 +87,24 @@ __all__ = [
     'unpack_bits',
     'V3Cache',
     'CacheConfig',
-    
-    # Legacy (Backward Compatibility)
-    'TurboQuant',
-    'LegacyTurboQuantConfig',
-    'QuantMode',
-    'LegacyTurboQuantV3',
-    'LegacyTurboQuantV3Config',
-    'legacy_create_v3_k4_v2',
-    'legacy_create_v3_k3_v2',
 ]
+
+
+def __getattr__(name):
+    """
+    Provide helpful error messages for legacy imports.
+    """
+    legacy_imports = {
+        'TurboQuant': 'This class has been removed. Use TurboQuantV3 instead.',
+        'PolarQuant': 'This class has been moved to turboquant.legacy.polar_quant',
+        'QJLCompressor': 'QJL has been removed from V3. Use MSECompressor instead.',
+        'TurboQuantCompressorV2': 'This class has been removed. Use TurboQuantV3.',
+        'TurboQuantPipeline': 'This class has been removed. Use TurboQuantV3.',
+    }
+    
+    if name in legacy_imports:
+        raise ImportError(
+            f"'{name}' is no longer available in turboquant. {legacy_imports[name]}"
+        )
+    
+    raise AttributeError(f"module 'turboquant' has no attribute '{name}'")

@@ -99,6 +99,31 @@ ruff check src/ experiments/ scripts/ tests/
 mypy src/
 ```
 
+### TurboQuant V3 Usage
+
+```python
+from turboquant import create_k4_v2
+
+# Create compressor (4-bit keys, 2-bit values)
+tq = create_k4_v2(head_dim=64)
+
+# Fit on representative samples
+tq.fit(sample_keys, sample_values)
+
+# Compress and decompress
+compressed = tq.compress(keys, values)
+keys_dq, values_dq = tq.decompress(compressed)
+
+# Use with HuggingFace
+cache = tq.as_cache(residual_window=128)
+model.generate(..., past_key_values=cache)
+```
+
+**Recommended Configurations:**
+- `create_k4_v2()`: 4-bit keys, 2-bit values (~4.9x compression) ⭐ Best quality
+- `create_k3_v2()`: 3-bit keys, 2-bit values (~3.0x compression)
+- `create_k2_v2()`: 2-bit keys, 2-bit values (~7.1x compression, max memory)
+
 ## Documentation
 
 - **[Documentation Index](docs/README.md)** - All documentation organized by category
@@ -121,11 +146,12 @@ Dynamic adaptation while keeping KV cache frozen:
 - **Frozen KV Cache**: No memory overhead
 - **Margin Maximization**: Explicit logit margin optimization
 
-### 🗜️ TurboQuant Compression
-6x model compression with zero accuracy loss:
-- **Two-Stage Pipeline**: PolarQuant + QJL
-- **Tensor Core Ready**: INT4 quantization
-- **5.7x KV Cache Reduction**: Enables 1M+ context lengths
+### 🗜️ TurboQuant V3 Compression
+~5x KV cache compression with minimal quality loss:
+- **MSE-Only Pipeline**: No QJL (hurts attention quality)
+- **Per-Vector Normalization**: Handles varying magnitudes
+- **Fast Walsh-Hadamard Transform**: O(n log n) random rotation
+- **Asymmetric K/V Bits**: 4-bit keys, 2-bit values for optimal quality/compression
 
 ### 🎛️ Dynamic Gating
 Allocates computation based on input difficulty:
@@ -142,7 +168,13 @@ Adaptive-Deep-Networks/
 │   ├── qttt/                     # Query-Only Test-Time Training
 │   ├── gating/                   # Dynamic gating controller
 │   ├── models/                   # Model definitions
-│   ├── turboquant/              # TurboQuant compression
+│   ├── turboquant/              # TurboQuant V3 compression
+│   │   ├── api.py               # Main API
+│   │   ├── compressor.py        # MSE compression
+│   │   ├── quantizer.py         # Lloyd-Max quantization
+│   │   ├── rotation.py          # FWHT random rotation
+│   │   ├── cache.py             # HF-compatible cache
+│   │   └── legacy/              # Deprecated implementations
 │   └── benchmarks/              # Evaluation benchmarks
 │
 ├── experiments/                  # Experiment framework
@@ -168,6 +200,8 @@ Adaptive-Deep-Networks/
 │
 ├── tests/                        # Test suite
 │   ├── unit/                    # Unit tests
+│   ├── legacy/                  # Deprecated test files
+│   ├── test_turboquant_v3_refactored.py  # V3 comprehensive tests
 │   └── conftest.py              # Pytest fixtures
 │
 ├── docs/                         # Documentation (organized by category)
