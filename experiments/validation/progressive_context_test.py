@@ -86,7 +86,7 @@ def simulate_performance(context_length, model_type='adb'):
     # 内存和延迟估计
     mem_gb = (context_length / 1_000_000) * 16  # 约16GB per 1M tokens for baseline
     if model_type == 'adb':
-        mem_gb = mem_gb / 5.7  # TurboQuant压缩
+        mem_gb = mem_gb / 5.7  # RaBitQ压缩
     
     latency_ms = (context_length / 1000) ** 1.5 * 0.01
     if model_type == 'adb':

@@ -105,7 +105,7 @@ class ModelLoader:
         
         Args:
             model_size: 'small' (2.2B), 'medium' (8.7B), or 'large' (27B)
-            use_turboquant: 是否启用 TurboQuant
+            use_turboquant: 是否启用 RaBitQ
             use_polar_qttt: 是否启用 Polar qTTT
         
         Returns:
@@ -157,7 +157,7 @@ class ModelLoader:
         self.config = config
         
         print(f"\nInitialized {model_size} model ({sum(p.numel() for p in model.parameters())/1e9:.1f}B params)")
-        print(f"  - TurboQuant: {use_turboquant}")
+        print(f"  - RaBitQ: {use_turboquant}")
         print(f"  - Polar qTTT: {use_polar_qttt}")
         
         return model, config

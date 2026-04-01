@@ -6,7 +6,7 @@ Provides:
 - EMAThreshold: Exponential moving average calibration
 - TargetRateThreshold: Maintain target adaptation rate
 - GatingController: High-level gating controller
-- DepthPriorityGatingController: TurboQuant-aware depth-priority controller
+- DepthPriorityGatingController: RaBitQ-aware depth-priority controller
 """
 
 from .reconstruction import ReconstructionLoss

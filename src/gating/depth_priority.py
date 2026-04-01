@@ -1,9 +1,9 @@
 """
 Depth-Priority Gating Controller
 
-Based on: Section 4.2 of Adaptive Deep Networks TurboQuant version
+Based on: Section 4.2 of Adaptive Deep Networks RaBitQ version
 
-When TurboQuant acceleration is enabled:
+When RaBitQ acceleration is enabled:
 - Depth (qTTT) becomes 8× cheaper than standard precision
 - Policy strictly prioritizes depth over width (thinking tokens)
 - This transforms the FLOP equivalence to decisively favor depth
@@ -217,7 +217,7 @@ class AdaptiveThresholdWithDepthPriority(EMAThreshold):
     EMA threshold with automatic depth-priority adjustment.
     
     When adaptation rate exceeds target, automatically shifts
-    more budget to depth (which is cheaper under TurboQuant).
+    more budget to depth (which is cheaper under RaBitQ).
     """
     
     def __init__(

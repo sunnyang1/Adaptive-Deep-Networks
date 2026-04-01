@@ -5,7 +5,7 @@ Adaptive Deep Networks: 实验套件
 
 ## 目录结构
 - core/: 核心验证实验 (exp1-exp6)
-- turboquant/: TurboQuant 压缩和加速实验
+- rabitq/: RaBitQ KV Cache 压缩实验
 - benchmarks/: 模型基准测试
 - utils/: 实验工具函数
 - docs/: 实验文档

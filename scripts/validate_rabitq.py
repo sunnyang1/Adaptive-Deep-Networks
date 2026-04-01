@@ -23,8 +23,8 @@ from dataclasses import dataclass
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from turboquant import create_k4_v2, create_k3_v2, create_k2_v2, TurboQuantV3
-from turboquant.api import TurboQuantConfig
+from rabitq import create_k4_v2, create_k3_v2, create_k2_v2, RaBitQ
+from rabitq.api import RaBitQConfig
 
 
 # =============================================================================

@@ -1,5 +1,5 @@
 """
-Refactored TurboQuant V3 Test Suite.
+Refactored RaBitQ Test Suite.
 
 Comprehensive tests for all components:
 - Rotation (FWHT)
@@ -17,11 +17,11 @@ from typing import Tuple
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from turboquant.rotation import RandomRotation, fwht, fwht_inverse
-from turboquant.quantizer import LloydMaxQuantizer
-from turboquant.compressor import MSECompressor, CompressorConfig, pack_bits, unpack_bits
-from turboquant.cache import V3Cache, CacheConfig
-from turboquant.api import TurboQuantV3, TurboQuantConfig, create_k4_v2, create_k3_v2, create_k2_v2
+from rabitq.rotation import RandomRotation, fwht, fwht_inverse
+from rabitq.quantizer import LloydMaxQuantizer
+from rabitq.compressor import MSECompressor, CompressorConfig, pack_bits, unpack_bits
+from rabitq.cache import RaBitQCache, CacheConfig
+from rabitq.api import RaBitQ, RaBitQConfig, create_k4_v2, create_k3_v2, create_k2_v2
 
 
 # =============================================================================
@@ -323,14 +323,14 @@ class TestAPI:
         tq = create_k4_v2(head_dim=64, device=device)
         cache = tq.as_cache(residual_window=64)
         
-        assert isinstance(cache, V3Cache)
+        assert isinstance(cache, RaBitQCache)
         assert cache.config.residual_window == 64
-    
+
     @pytest.mark.parametrize("factory", [create_k4_v2, create_k3_v2, create_k2_v2])
     def test_factory_functions(self, device, factory):
         """All factory functions should work."""
         tq = factory(head_dim=64, device=device)
-        assert isinstance(tq, TurboQuantV3)
+        assert isinstance(tq, RaBitQ)
 
 
 # =============================================================================
@@ -339,10 +339,10 @@ class TestAPI:
 
 class TestCache:
     """Test HF-compatible cache."""
-    
+
     def test_cache_basic(self, device):
         """Cache should store and retrieve."""
-        cache = V3Cache(key_bits=4, value_bits=2, residual_window=0, device=device)
+        cache = RaBitQCache(key_bits=4, value_bits=2, residual_window=0, device=device)
         
         batch, heads, seq, dim = 1, 8, 64, 64
         keys = torch.randn(batch, heads, seq, dim, device=device)
@@ -357,7 +357,7 @@ class TestCache:
     
     def test_cache_accumulation(self, device):
         """Cache should accumulate across updates."""
-        cache = V3Cache(key_bits=4, value_bits=2, residual_window=0, device=device)
+        cache = RaBitQCache(key_bits=4, value_bits=2, residual_window=0, device=device)
         
         batch, heads, dim = 1, 8, 64
         
@@ -377,7 +377,7 @@ class TestCache:
     
     def test_cache_residual_window(self, device):
         """Cache should keep recent tokens in fp16."""
-        cache = V3Cache(key_bits=4, value_bits=2, residual_window=32, device=device)
+        cache = RaBitQCache(key_bits=4, value_bits=2, residual_window=32, device=device)
         
         batch, heads, dim = 1, 8, 64
         

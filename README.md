@@ -10,7 +10,7 @@
 This repository provides a complete implementation and validation framework for the ADN paper, featuring:
 - **Block Attention Residuals (AttnRes)** - Prevents representation burial in deep transformers
 - **Query-only Test-Time Training (qTTT)** - Dynamic adaptation with frozen KV cache
-- **TurboQuant** - 6x model compression with zero accuracy loss
+- **RaBitQ** - 5x KV cache compression with minimal quality loss
 - **Dynamic Gating** - Allocates computation based on input difficulty
 
 ## Overview
@@ -183,13 +183,12 @@ Adaptive-Deep-Networks/
 │   ├── qttt/                     # Query-Only Test-Time Training
 │   ├── gating/                   # Dynamic gating controller
 │   ├── models/                   # Model definitions
-│   ├── turboquant/              # TurboQuant V3 compression
+│   ├── rabitq/                  # RaBitQ compression
 │   │   ├── api.py               # Main API
 │   │   ├── compressor.py        # MSE compression
 │   │   ├── quantizer.py         # Lloyd-Max quantization
 │   │   ├── rotation.py          # FWHT random rotation
 │   │   ├── cache.py             # HF-compatible cache
-│   │   └── legacy/              # Deprecated implementations
 │   └── benchmarks/              # Evaluation benchmarks
 │
 ├── experiments/                  # Experiment framework

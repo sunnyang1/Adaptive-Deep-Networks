@@ -64,7 +64,7 @@ def simulate_needle_retrieval(context_length, model_type='adb'):
         accuracy = base_acc * np.exp(-decay_rate * log_pos)
         
     elif model_type == 'adb':
-        # ADB + TurboQuant: best retention
+        # ADB + RaBitQ: best retention
         # 128K: ~78.2%, 256K: ~68.2%, 512K: ~58%, 1M: ~48%
         # Uses explicit margin maximization to combat dilution
         base_acc = 99.5
@@ -89,7 +89,7 @@ def simulate_memory_usage(context_length, model_type='adb', batch_size=1, num_he
     bytes_per_token = 2 * num_heads * head_dim * 2  # K + V, FP16 = 2 bytes
     
     if model_type == 'adb':
-        # TurboQuant compression: ~5.7x reduction
+        # RaBitQ compression: ~5.7x reduction
         bytes_per_token = bytes_per_token / 5.7
     
     kv_cache_gb = (context_length * batch_size * bytes_per_token) / (1024**3)
@@ -111,7 +111,7 @@ def simulate_latency(context_length, model_type='adb'):
     模拟推理延迟 (ms per token)
     
     Models the quadratic complexity of attention.
-    With TurboQuant, ADB maintains better efficiency.
+    With RaBitQ, ADB maintains better efficiency.
     """
     base_latency = 10  # ms at 1K context
     
@@ -125,7 +125,7 @@ def simulate_latency(context_length, model_type='adb'):
         # Block attention helps
         scale_factor = (context_length / 1024) ** 1.5
     elif model_type == 'adb':
-        # TurboQuant + optimized kernels
+        # RaBitQ + optimized kernels
         scale_factor = (context_length / 1024) ** 1.3
     
     return base_latency * scale_factor / 1000  # Convert to seconds
@@ -150,7 +150,7 @@ def run_extreme_scaling_test(output_dir=None):
         'baseline': 'Transformer (Baseline)',
         'ttt_linear': 'TTT-Linear',
         'attnres': 'AttnRes',
-        'adb': 'ADB + TurboQuant'
+        'adb': 'ADB + RaBitQ'
     }
     
     results = {model: {'accuracy': [], 'memory': [], 'latency': []} for model in models}

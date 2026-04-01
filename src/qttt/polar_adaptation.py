@@ -192,7 +192,7 @@ class PolarQTTT(nn.Module):
     """
     Polar-coordinate Query-only Test-Time Training.
     
-    Integrates with TurboQuant for 8× cost reduction.
+    Integrates with RaBitQ for 8× cost reduction.
     """
     
     def __init__(

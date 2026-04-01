@@ -1,0 +1,26 @@
+# RaBitQ Compression Verification
+experiment:
+  name: "rabitq_compression"
+  description: "Verify RaBitQ KV cache compression ratio and quality"
+
+# Target compression ratios
+targets:
+  k4_v2:
+    expected_ratio: 4.9
+    tolerance: 0.5  # ±0.5x
+  k3_v2:
+    expected_ratio: 3.0
+    tolerance: 0.3
+  k2_v2:
+    expected_ratio: 7.1
+    tolerance: 0.7
+
+# Test configuration
+test:
+  batch_size: 2
+  num_heads: 8
+  seq_lengths:
+    quick: [128, 512]
+    full: [128, 512, 2048, 8192]
+  head_dim: 64
+  num_samples: 10

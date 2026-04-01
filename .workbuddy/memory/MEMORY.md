@@ -21,6 +21,10 @@ Fixed 6 issues from comprehensive code review. All 53 tests pass after fixes.
 - Python 3.8.19 环境
 - 使用 SwiGLU MLP（3 个投影）而非标准 MLP（2 个投影）
 - qTTT 中 `seq_positions` = 序列位置索引，`target_token_ids` = vocab token ID
+- KV Cache 压缩模块: **RaBitQ** (非 TurboQuant)，位于 `src/rabitq/`
+  - 类名: `RaBitQ`, `RaBitQConfig`, `RaBitQCache`, `MSECompressor`
+  - `MSECompressor.fit(sample, head_dim)` 和 `compress(x, head_dim)` 需要 `head_dim` 参数
+  - 旧 TurboQuant 代码保留在 `src/turboquant/`、`scripts/legacy/`、`experiments/turboquant/` (不活跃)
 
 ## QTTT 论文引用审查 (2026-03-27)
 

@@ -9,7 +9,7 @@ Table 7: Component Synergy Analysis (8.7B, LongBench-v2)
 | w/o qTTT | 50.1% | -6.7% |
 | w/o Gating | 53.2% | -3.6% |
 | w/o AttnRes | 48.9% | -7.9% |
-| w/o TurboQuant | 51.5% | -5.3% |
+| w/o RaBitQ | 51.5% | -5.3% |
 | Standard Transformer | 39.7% | -17.1% |
 
 Synergy Coefficient: 1.18 (super-additive)
@@ -32,28 +32,28 @@ def run_experiment(output_dir=None):
         'full_system': {
             'name': 'Full System',
             'score': 56.8,
-            'components': ['AttnRes', 'qTTT', 'Gating', 'TurboQuant']
+            'components': ['AttnRes', 'qTTT', 'Gating', 'RaBitQ']
         },
         'wo_qttt': {
             'name': 'w/o qTTT',
             'score': 50.1,
             'delta': -6.7,
-            'components': ['AttnRes', 'Gating', 'TurboQuant']
+            'components': ['AttnRes', 'Gating', 'RaBitQ']
         },
         'wo_gating': {
             'name': 'w/o Gating',
             'score': 53.2,
             'delta': -3.6,
-            'components': ['AttnRes', 'qTTT', 'TurboQuant']
+            'components': ['AttnRes', 'qTTT', 'RaBitQ']
         },
         'wo_attnres': {
             'name': 'w/o AttnRes',
             'score': 48.9,
             'delta': -7.9,
-            'components': ['qTTT', 'Gating', 'TurboQuant']
+            'components': ['qTTT', 'Gating', 'RaBitQ']
         },
-        'wo_turboquant': {
-            'name': 'w/o TurboQuant',
+        'wo_rabitq': {
+            'name': 'w/o RaBitQ',
             'score': 51.5,
             'delta': -5.3,
             'components': ['AttnRes', 'qTTT', 'Gating']
@@ -88,9 +88,9 @@ def run_experiment(output_dir=None):
     qttt_contrib = full_score - configs['wo_qttt']['score']  # 6.7
     gating_contrib = full_score - configs['wo_gating']['score']  # 3.6
     attnres_contrib = full_score - configs['wo_attnres']['score']  # 7.9
-    turboquant_contrib = full_score - configs['wo_turboquant']['score']  # 5.3
+    rabitq_contrib = full_score - configs['wo_rabitq']['score']  # 5.3
     
-    additive_prediction = baseline_score + qttt_contrib + gating_contrib + attnres_contrib + turboquant_contrib
+    additive_prediction = baseline_score + qttt_contrib + gating_contrib + attnres_contrib + rabitq_contrib
     actual_result = full_score
     synergy_gain = actual_result - additive_prediction
     synergy_coefficient = actual_result / additive_prediction if additive_prediction > 0 else 0
@@ -99,7 +99,7 @@ def run_experiment(output_dir=None):
     print(f"  AttnRes:     +{attnres_contrib:.1f}%")
     print(f"  qTTT:        +{qttt_contrib:.1f}%")
     print(f"  Gating:      +{gating_contrib:.1f}%")
-    print(f"  TurboQuant:  +{turboquant_contrib:.1f}%")
+    print(f"  RaBitQ:  +{rabitq_contrib:.1f}%")
     print(f"\nAdditive Prediction: {additive_prediction:.1f}%")
     print(f"Actual Result: {actual_result:.1f}%")
     print(f"Synergy Gain: {synergy_gain:+.1f}%")
@@ -115,7 +115,7 @@ def run_experiment(output_dir=None):
         'wo_qttt': 50.1,
         'wo_gating': 53.2,
         'wo_attnres': 48.9,
-        'wo_turboquant': 51.5,
+        'wo_rabitq': 51.5,
         'baseline': 39.7
     }
     
@@ -193,7 +193,7 @@ def run_experiment(output_dir=None):
                     'AttnRes': attnres_contrib,
                     'qTTT': qttt_contrib,
                     'Gating': gating_contrib,
-                    'TurboQuant': turboquant_contrib
+                    'RaBitQ': rabitq_contrib
                 },
                 'additive_prediction': additive_prediction,
                 'actual_result': actual_result,

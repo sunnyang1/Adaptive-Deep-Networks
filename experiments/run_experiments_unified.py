@@ -134,6 +134,38 @@ EXPERIMENTS: Dict[str, ExperimentDef] = {
         timeout=1200
     ),
     
+    # Paper Table Experiments (new)
+    'table3': ExperimentDef(
+        id='table3',
+        name='Inference Benchmark (Table 3)',
+        description='End-to-end inference: throughput, memory, latency for width vs depth (Paper Table 3)',
+        category='core',
+        script='experiments/core/table3_inference_benchmark/run_table3.py',
+        quick_args=['--quick'],
+        full_args=[],
+        timeout=1800
+    ),
+    'table5': ExperimentDef(
+        id='table5',
+        name='Logit Margin Distribution (Table 5)',
+        description='Attention logit margins before/after qTTT adaptation (Paper Table 5)',
+        category='core',
+        script='experiments/core/table5_margin_distribution/run_table5.py',
+        quick_args=['--quick'],
+        full_args=[],
+        timeout=1800
+    ),
+    'table8': ExperimentDef(
+        id='table8',
+        name='Accuracy-Compute Pareto (Table 8)',
+        description='FLOPs vs accuracy trade-off, Pareto frontier (Paper Table 8)',
+        category='core',
+        script='experiments/core/table8_pareto/run_table8.py',
+        quick_args=['--quick'],
+        full_args=[],
+        timeout=1800
+    ),
+    
     # Validation Experiments
     'val_small': ExperimentDef(
         id='val_small',
@@ -145,15 +177,25 @@ EXPERIMENTS: Dict[str, ExperimentDef] = {
         full_args=[],
         timeout=600
     ),
-    'val_turboquant': ExperimentDef(
-        id='val_turboquant',
-        name='TurboQuant Validation',
-        description='Test TurboQuant compression and accuracy',
+    'val_rabitq': ExperimentDef(
+        id='val_rabitq',
+        name='RaBitQ Validation',
+        description='Test RaBitQ compression and accuracy',
         category='validation',
-        script='scripts/experiments/test_turboquant_small.py',
-        quick_args=['--quick'],
+        script='scripts/validate_rabitq.py',
+        quick_args=['--skip-model'],
         full_args=[],
         timeout=1200
+    ),
+    'val_rabitq_compression': ExperimentDef(
+        id='val_rabitq_compression',
+        name='RaBitQ Compression Verification',
+        description='Verify RaBitQ compression ratio (~4.9x) and reconstruction quality',
+        category='validation',
+        script='experiments/rabitq/run_compression_verification.py',
+        quick_args=['--quick'],
+        full_args=[],
+        timeout=600
     ),
     
     # Paper Metrics
@@ -245,7 +287,7 @@ def run_experiment(
     if output_dir:
         exp_output = output_dir / exp.category / exp.id
         exp_output.mkdir(parents=True, exist_ok=True)
-        cmd.extend(['--output_dir', str(exp_output)])
+        cmd.extend(['--output-dir', str(exp_output)])
     
     print(f"Command: {' '.join(cmd)}")
     print(f"Start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

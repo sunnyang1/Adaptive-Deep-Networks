@@ -1,7 +1,7 @@
 """
-Polar Pseudo-Query Vectors for TurboQuant-Accelerated qTTT
+Polar Pseudo-Query Vectors for RaBitQ-Accelerated qTTT
 
-Based on: Section 3.3 of Adaptive Deep Networks TurboQuant version
+Based on: Section 3.3 of Adaptive Deep Networks RaBitQ version
 
 Key innovation: Decompose pseudo-queries into magnitude (r) and direction (θ),
 freeze r during qTTT, adapt only θ. This:

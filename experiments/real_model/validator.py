@@ -127,7 +127,7 @@ class ModelValidator:
         """
         运行内存分析。
         
-        验证 TurboQuant 的内存缩减效果。
+        验证 RaBitQ 的内存缩减效果。
         """
         if context_lengths is None:
             context_lengths = [4096, 8192, 16384, 32768]
@@ -160,9 +160,9 @@ class ModelValidator:
         print(f"    Theoretical KV Cache at {max_ctx//1024}K: {kv_cache_gb:.2f} GB")
         print(f"    Actual Peak Memory: {max_measurement['peak_memory_gb']:.2f} GB")
         
-        # 如果使用 TurboQuant，应该有显著缩减
+        # 如果使用 RaBitQ，应该有显著缩减
         if hasattr(self.config, 'use_turboquant') and self.config.use_turboquant:
-            print(f"    ✅ TurboQuant enabled: Expected ~5.7x reduction")
+            print(f"    ✅ RaBitQ enabled: Expected ~5.7x reduction")
         
         return results
     

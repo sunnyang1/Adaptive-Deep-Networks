@@ -41,7 +41,7 @@ TEST_MODULES = {
         'test_models': 'Model architecture tests',
         'test_gating': 'Dynamic gating tests',
         'test_qttt': 'qTTT tests',
-        'test_turboquant_v3': 'TurboQuant V3 tests',
+        'test_rabitq': 'RaBitQ tests',
         'test_benchmarks': 'Benchmark tests',
     },
     'integration': {

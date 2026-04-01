@@ -52,9 +52,9 @@ table4_needle_haystack:
     - attnres
     - adb
 
-# TurboQuant Claims
-turboquant:
-  compression_ratio: 6.0
-  kv_cache_reduction: 5.7
+# RaBitQ Compression Claims
+rabitq:
+  compression_ratio: 5.0
+  kv_cache_reduction: 4.9
   throughput_gain: 8.0
   tolerance: 0.10  # 10% tolerance

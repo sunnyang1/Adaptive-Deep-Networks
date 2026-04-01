@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "adaptive-deep-networks"
 version = "0.1.0"
-description = "Adaptive Deep Networks with TurboQuant compression"
+description = "Adaptive Deep Networks with RaBitQ compression"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}

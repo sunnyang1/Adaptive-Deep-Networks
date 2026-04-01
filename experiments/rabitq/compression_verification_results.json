@@ -1,0 +1,103 @@
+{
+  "experiment": "rabitq_compression",
+  "description": "Verify RaBitQ KV cache compression ratio and quality",
+  "device": "cpu",
+  "quick_mode": true,
+  "configurations": {
+    "k4_v2": {
+      "config": "k4_v2",
+      "expected_ratio": 4.9,
+      "tolerance": 0.5,
+      "seq_length_results": [
+        {
+          "seq_len": 128,
+          "compression_ratio": 4.923,
+          "original_bytes": 524288,
+          "compressed_bytes": 106496,
+          "key_mse": 0.009259,
+          "val_mse": 0.114237,
+          "key_cosine_similarity": 0.9955,
+          "val_cosine_similarity": 0.9416,
+          "ratio_within_tolerance": true
+        },
+        {
+          "seq_len": 512,
+          "compression_ratio": 4.923,
+          "original_bytes": 2097152,
+          "compressed_bytes": 425984,
+          "key_mse": 0.009192,
+          "val_mse": 0.114813,
+          "key_cosine_similarity": 0.9956,
+          "val_cosine_similarity": 0.9416,
+          "ratio_within_tolerance": true
+        }
+      ],
+      "passed": true
+    },
+    "k3_v2": {
+      "config": "k3_v2",
+      "expected_ratio": 3.0,
+      "tolerance": 0.3,
+      "seq_length_results": [
+        {
+          "seq_len": 128,
+          "compression_ratio": 3.048,
+          "original_bytes": 524288,
+          "compressed_bytes": 172032,
+          "key_mse": 0.033329,
+          "val_mse": 0.114346,
+          "key_cosine_similarity": 0.9836,
+          "val_cosine_similarity": 0.942,
+          "ratio_within_tolerance": true
+        },
+        {
+          "seq_len": 512,
+          "compression_ratio": 3.048,
+          "original_bytes": 2097152,
+          "compressed_bytes": 688128,
+          "key_mse": 0.033263,
+          "val_mse": 0.115224,
+          "key_cosine_similarity": 0.9836,
+          "val_cosine_similarity": 0.9415,
+          "ratio_within_tolerance": true
+        }
+      ],
+      "passed": true
+    },
+    "k2_v2": {
+      "config": "k2_v2",
+      "expected_ratio": 7.1,
+      "tolerance": 0.7,
+      "seq_length_results": [
+        {
+          "seq_len": 128,
+          "compression_ratio": 7.111,
+          "original_bytes": 524288,
+          "compressed_bytes": 73728,
+          "key_mse": 0.115259,
+          "val_mse": 0.11394,
+          "key_cosine_similarity": 0.9414,
+          "val_cosine_similarity": 0.9419,
+          "ratio_within_tolerance": true
+        },
+        {
+          "seq_len": 512,
+          "compression_ratio": 7.111,
+          "original_bytes": 2097152,
+          "compressed_bytes": 294912,
+          "key_mse": 0.114671,
+          "val_mse": 0.114664,
+          "key_cosine_similarity": 0.9419,
+          "val_cosine_similarity": 0.9417,
+          "ratio_within_tolerance": true
+        }
+      ],
+      "passed": true
+    }
+  },
+  "summary": {
+    "total_configs": 3,
+    "passed_configs": 3,
+    "failed_configs": 0
+  }
+}

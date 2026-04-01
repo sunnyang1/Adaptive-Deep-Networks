@@ -195,11 +195,11 @@ class MemoryProfiler:
     def compare_compression(
         self,
         model_standard: torch.nn.Module,
-        model_turboquant: torch.nn.Module,
+        model_rabitq: torch.nn.Module,
         context_length: int = 8192
     ) -> Dict:
         """
-        对比标准模型和 TurboQuant 压缩模型的内存使用。
+        对比标准模型和 RaBitQ 压缩模型的内存使用。
         
         Returns:
             对比结果
@@ -208,7 +208,7 @@ class MemoryProfiler:
         input_ids = torch.randint(0, vocab_size, (1, context_length), device=self.device)
         
         print("="*70)
-        print("MEMORY COMPARISON: Standard vs TurboQuant")
+        print("MEMORY COMPARISON: Standard vs RaBitQ")
         print("="*70)
         print(f"\nContext length: {context_length:,} tokens")
         
@@ -222,20 +222,20 @@ class MemoryProfiler:
         results['standard'] = mem_std
         print(f"  Peak memory: {mem_std['peak_allocated_gb']:.2f} GB")
         
-        # 测试 TurboQuant 模型
-        print("\nTurboQuant Model:")
+        # 测试 RaBitQ 模型
+        print("\nRaBitQ Model:")
         if self.gpu_available:
             torch.cuda.empty_cache()
-        mem_turbo = self.measure_inference(model_turboquant, input_ids)
-        results['turboquant'] = mem_turbo
-        print(f"  Peak memory: {mem_turbo['peak_allocated_gb']:.2f} GB")
+        mem_rabitq = self.measure_inference(model_rabitq, input_ids)
+        results['rabitq'] = mem_rabitq
+        print(f"  Peak memory: {mem_rabitq['peak_allocated_gb']:.2f} GB")
         
         # 计算压缩比
-        compression_ratio = mem_std['peak_allocated_gb'] / mem_turbo['peak_allocated_gb']
+        compression_ratio = mem_std['peak_allocated_gb'] / mem_rabitq['peak_allocated_gb']
         results['compression_ratio'] = compression_ratio
         
         print(f"\nCompression Ratio: {compression_ratio:.2f}x")
-        print(f"Memory Saved: {mem_std['peak_allocated_gb'] - mem_turbo['peak_allocated_gb']:.2f} GB")
+        print(f"Memory Saved: {mem_std['peak_allocated_gb'] - mem_rabitq['peak_allocated_gb']:.2f} GB")
         
         return results
     

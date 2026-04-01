@@ -191,7 +191,7 @@ VALIDATION_TARGETS = {
         131072: 68.2,
         'average': 86.9,
     },
-    'turboquant': {
+    'rabitq': {
         'compression_ratio': 6.0,
         'kv_cache_reduction': 5.7,
         'throughput_gain': 8.0,

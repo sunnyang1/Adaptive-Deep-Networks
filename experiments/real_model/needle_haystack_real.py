@@ -11,7 +11,7 @@ Paper Table 4:
 - 128K: 68.2%
 - Average: 86.9%
 
-Extended (ADB-TurboQuant):
+Extended (ADB-RaBitQ):
 - 256K: 65%
 - 512K: 55%
 - 1M: 45%

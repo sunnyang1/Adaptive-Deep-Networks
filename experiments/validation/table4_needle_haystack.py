@@ -80,7 +80,7 @@ def simulate_needle_accuracy(context_length, model_type='adb'):
             return 28.7
             
     elif model_type == 'adb':
-        # ADB + TurboQuant: 最优表现
+        # ADB + RaBitQ: 最优表现
         if context_length <= 1024:
             return 99.5
         elif context_length <= 4096:
@@ -111,7 +111,7 @@ def run_experiment(output_dir=None):
         'baseline': 'Transformer (Baseline)',
         'ttt_linear': 'TTT-Linear',
         'attnres': 'AttnRes',
-        'adb': 'ADB + TurboQuant'
+        'adb': 'ADB + RaBitQ'
     }
     
     results = {model: [] for model in models}
@@ -139,7 +139,7 @@ def run_experiment(output_dir=None):
     
     # 验证目标
     print("\n" + "="*60)
-    print("Target Validation (ADB + TurboQuant):")
+    print("Target Validation (ADB + RaBitQ):")
     print("="*60)
     
     targets = {

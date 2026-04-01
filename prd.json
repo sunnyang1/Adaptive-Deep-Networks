@@ -1,129 +1,178 @@
 {
-  "projectName": "TurboQuant Code Refactor",
-  "branchName": "refactor/turboquant-cleanup",
-  "complexity": "medium",
-  "totalStories": 7,
+  "projectName": "Experiment Framework Refactor & New Experiments",
+  "branchName": "refactor/experiment-framework-v2",
+  "complexity": "large",
+  "totalStories": 8,
   "userStories": [
     {
-      "id": "US-1",
-      "title": "Fix circular import issues",
-      "description": "Remove runtime imports from tensor_core.py and polar_pseudo_query.py to prevent circular dependency risks",
+      "id": "US-001",
+      "title": "Clean remaining TurboQuant references in experiments/",
+      "description": "Remove all remaining TurboQuant references in active experiment code: __init__.py docstring, validation/table7_synergy.py header, real_model/needle_haystack_real.py header, real_model/datasets/needle_dataset.py header, run_experiments_unified.py val_turboquant entry",
       "acceptanceCriteria": [
-        "tensor_core.py imports moved to top",
-        "polar_pseudo_query.py imports moved to top",
-        "All modules can be imported safely at module level"
+        "experiments/__init__.py docstring mentions RaBitQ instead of TurboQuant",
+        "experiments/validation/table7_synergy.py header says 'w/o RaBitQ'",
+        "experiments/real_model/needle_haystack_real.py says 'ADB-RaBitQ'",
+        "experiments/real_model/datasets/needle_dataset.py says 'ADB-RaBitQ'",
+        "run_experiments_unified.py has no TurboQuant in experiment names",
+        "grep -ri 'turboquant' experiments/ --exclude-dir=legacy --exclude-dir=turboquant returns empty"
       ],
-      "priority": "P0",
+      "priority": 1,
       "estimatedMinutes": 15,
-      "files": ["src/turboquant/tensor_core.py", "src/attnres/polar_pseudo_query.py"],
-      "passes": true
-    },
-    {
-      "id": "US-2",
-      "title": "Fix __all__ export errors",
-      "description": "Remove undefined symbols from __all__ exports in __init__.py files",
-      "acceptanceCriteria": [
-        "Remove BlockAttnResConfig from attnres/__init__.py",
-        "Remove PolarToCartesian from turboquant/__init__.py",
-        "Verify all exported symbols exist"
-      ],
-      "priority": "P0",
-      "estimatedMinutes": 10,
-      "files": ["src/attnres/__init__.py", "src/turboquant/__init__.py"],
-      "passes": true
-    },
-    {
-      "id": "US-3",
-      "title": "Fix method parameter inconsistency",
-      "description": "Fix PolarQueryAdapter.get_query() parameter mismatch in polar_adaptation.py",
-      "acceptanceCriteria": [
-        "Method signature matches usage",
-        "No unused parameters",
-        "Tests pass"
-      ],
-      "priority": "P0",
-      "estimatedMinutes": 10,
-      "files": ["src/qttt/polar_adaptation.py"],
-      "passes": true
-    },
-    {
-      "id": "US-4",
-      "title": "Unify type annotations",
-      "description": "Standardize type annotations across codebase: device types, Optional usage, list annotations",
-      "acceptanceCriteria": [
-        "device parameter uses Union[str, torch.device]",
-        "All Optional parameters properly annotated",
-        "Fix bare list type annotations",
-        "mypy src/ passes without errors"
-      ],
-      "priority": "P1",
-      "estimatedMinutes": 25,
       "files": [
-        "src/turboquant/polar_quant.py",
-        "src/turboquant/qjl.py",
-        "src/turboquant/tensor_core.py",
-        "src/qttt/adaptation.py",
-        "src/qttt/margin_loss.py",
-        "src/gating/threshold.py",
-        "src/models/adaptive_transformer.py"
+        "experiments/__init__.py",
+        "experiments/validation/table7_synergy.py",
+        "experiments/real_model/needle_haystack_real.py",
+        "experiments/real_model/datasets/needle_dataset.py",
+        "experiments/run_experiments_unified.py"
       ],
-      "passes": true
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-5",
-      "title": "Rename conflicting PolarQueryAdapter classes",
-      "description": "Rename duplicate class names to avoid confusion between attnres and qttt modules",
+      "id": "US-002",
+      "title": "Implement Table 5 - Logit Margin Distribution experiment",
+      "description": "Create experiments/core/table5_margin_distribution/ with experiment.py, run_table5.py, and config.yaml. Measures attention logit margins before/after qTTT adaptation at multiple context lengths. Reports mean margin, delta, and % achieving theoretical minimum.",
       "acceptanceCriteria": [
-        "attnres PolarQueryAdapter renamed to PseudoQueryPolarAdapter",
-        "qttt PolarQueryAdapter renamed to QueryAdaptationPolarAdapter",
-        "All references updated",
-        "Backward compatibility maintained via aliases"
+        "experiments/core/table5_margin_distribution/experiment.py exists and extends CoreExperiment",
+        "experiments/core/table5_margin_distribution/run_table5.py exists with --quick, --device, --context_lengths flags",
+        "experiments/core/table5_margin_distribution/config.yaml defines context lengths and sample counts",
+        "Quick mode runs in <60s and produces results.json",
+        "Reuses needle-in-haystack data generation from exp2"
       ],
-      "priority": "P1",
+      "priority": 2,
+      "estimatedMinutes": 45,
+      "files": [
+        "experiments/core/table5_margin_distribution/experiment.py",
+        "experiments/core/table5_margin_distribution/run_table5.py",
+        "experiments/core/table5_margin_distribution/config.yaml",
+        "experiments/core/table5_margin_distribution/__init__.py"
+      ],
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement Table 3 - Inference Benchmark experiment",
+      "description": "Create experiments/core/table3_inference_benchmark/ with experiment.py, run_table3.py, and config.yaml. Measures tokens/sec, KV cache memory, p99 latency at context lengths [4K, 16K, 64K, 128K]. Compares standard inference vs ADB+RaBitQ.",
+      "acceptanceCriteria": [
+        "experiments/core/table3_inference_benchmark/experiment.py exists and extends CoreExperiment",
+        "experiments/core/table3_inference_benchmark/run_table3.py exists with --quick, --device flags",
+        "experiments/core/table3_inference_benchmark/config.yaml defines benchmark scenarios",
+        "Quick mode runs in <120s and produces results.json with throughput, memory, latency metrics",
+        "Uses torch.cuda.max_memory_allocated() or equivalent for memory measurement"
+      ],
+      "priority": 2,
+      "estimatedMinutes": 45,
+      "files": [
+        "experiments/core/table3_inference_benchmark/experiment.py",
+        "experiments/core/table3_inference_benchmark/run_table3.py",
+        "experiments/core/table3_inference_benchmark/config.yaml",
+        "experiments/core/table3_inference_benchmark/__init__.py"
+      ],
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement Table 8 - Accuracy-Compute Pareto experiment",
+      "description": "Create experiments/core/table8_pareto/ with experiment.py, run_table8.py, and config.yaml. Tests 5 configurations: standard 32L, AttnRes static, uniform qTTT, gated qTTT, oracle gating. Measures FLOPs and accuracy, generates Pareto frontier plot.",
+      "acceptanceCriteria": [
+        "experiments/core/table8_pareto/experiment.py exists and extends CoreExperiment",
+        "experiments/core/table8_pareto/run_table8.py exists with --quick, --device flags",
+        "experiments/core/table8_pareto/config.yaml defines 5 configurations with FLOP multipliers",
+        "Quick mode runs in <120s and produces results.json with FLOP and accuracy data",
+        "Generates Pareto frontier visualization when matplotlib is available"
+      ],
+      "priority": 2,
+      "estimatedMinutes": 45,
+      "files": [
+        "experiments/core/table8_pareto/experiment.py",
+        "experiments/core/table8_pareto/run_table8.py",
+        "experiments/core/table8_pareto/config.yaml",
+        "experiments/core/table8_pareto/__init__.py"
+      ],
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement RaBitQ Compression Verification experiment",
+      "description": "Rename experiments/turboquant/ to experiments/rabitq/. Create run_compression_verification.py that verifies ~4.9x KV cache compression ratio and reconstruction quality. Create run_microbenchmarks.py for kernel-level profiling.",
+      "acceptanceCriteria": [
+        "experiments/rabitq/ directory exists (renamed from turboquant/)",
+        "experiments/rabitq/run_compression_verification.py verifies compression ratio",
+        "experiments/rabitq/run_microbenchmarks.py profiles RaBitQ operations",
+        "Quick mode runs in <30s and reports compression ratio",
+        "Uses src.rabitq (not src.turboquant)"
+      ],
+      "priority": 3,
+      "estimatedMinutes": 30,
+      "files": [
+        "experiments/rabitq/run_compression_verification.py",
+        "experiments/rabitq/run_microbenchmarks.py",
+        "experiments/rabitq/config.yaml",
+        "experiments/rabitq/README.md"
+      ],
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Register all new experiments in run_experiments_unified.py",
+      "description": "Add table3, table5, table8, val_rabitq, val_rabitq_compression to the EXPERIMENTS registry. Update val_turboquant to val_rabitq. Add paper table references to existing experiment descriptions.",
+      "acceptanceCriteria": [
+        "table3, table5, table8 registered with correct scripts and args",
+        "val_rabitq replaces val_turboquant",
+        "val_rabitq_compression registered",
+        "All experiments have --quick and --full args",
+        "python experiments/run_experiments_unified.py --list shows all experiments",
+        "Paper table numbers referenced in descriptions"
+      ],
+      "priority": 4,
       "estimatedMinutes": 20,
       "files": [
-        "src/attnres/polar_pseudo_query.py",
-        "src/qttt/polar_adaptation.py",
-        "src/attnres/__init__.py",
-        "src/qttt/__init__.py"
+        "experiments/run_experiments_unified.py"
       ],
-      "passes": true
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-6",
-      "title": "Optimize QJL attention performance",
-      "description": "Replace nested loops in attention_with_qjl with matrix operations",
+      "id": "US-007",
+      "title": "Verify all experiments run in quick mode",
+      "description": "Run the full experiment suite in quick mode: python experiments/run_experiments_unified.py --all --quick. Fix any import errors, missing dependencies, or runtime issues.",
       "acceptanceCriteria": [
-        "Remove nested loops in qjl.py",
-        "Use batch matrix operations",
-        "Performance improvement >10x",
-        "Numerical accuracy maintained (<1e-5 relative error)"
+        "All core experiments (exp1-exp6) pass in quick mode",
+        "New experiments (table3, table5, table8) pass in quick mode",
+        "val_rabitq passes in quick mode",
+        "No import errors or missing module issues",
+        "Execution summary shows all experiments as 'success'"
       ],
-      "priority": "P1",
+      "priority": 5,
       "estimatedMinutes": 30,
-      "files": ["src/turboquant/qjl.py"],
-      "passes": true
+      "files": [],
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-7",
-      "title": "Add missing tests and code formatting",
-      "description": "Add tests for models and benchmarks modules, configure code formatting tools",
+      "id": "US-008",
+      "title": "Update documentation to reflect new experiment structure",
+      "description": "Update experiments/README.md, experiments/docs/ to reflect new table3/table5/table8 experiments, RaBitQ rename, and paper table mapping. Update AGENTS.md with experiment conventions.",
       "acceptanceCriteria": [
-        "Add tests/unit/test_models.py",
-        "Add tests/unit/test_benchmarks.py",
-        "Configure pyproject.toml with black/ruff settings",
-        "Add conftest.py for shared fixtures",
-        "Overall test coverage >80%"
+        "experiments/README.md lists all 10+ experiments with paper table references",
+        "experiments/__init__.py references correct modules",
+        "AGENTS.md updated with experiment development conventions",
+        "docs/core_experiments.md updated with new experiment descriptions"
       ],
-      "priority": "P2",
-      "estimatedMinutes": 40,
+      "priority": 6,
+      "estimatedMinutes": 20,
       "files": [
-        "tests/unit/test_models.py",
-        "tests/unit/test_benchmarks.py",
-        "pyproject.toml",
-        "tests/conftest.py"
+        "experiments/README.md",
+        "experiments/__init__.py",
+        "AGENTS.md",
+        "experiments/docs/core_experiments.md"
       ],
-      "passes": true
+      "passes": false,
+      "notes": ""
     }
   ]
 }

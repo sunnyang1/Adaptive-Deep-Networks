@@ -1,0 +1,16 @@
+{
+  "name": "experiment-dev",
+  "leadAgentId": "7521a595303d42988a70bb7d17682119",
+  "workspacePath": "/Users/michelleye/Documents/Adaptive-Deep-Networks",
+  "createdAt": "2026-04-01T09:21:05.600Z",
+  "options": {
+    "workspacePath": "/Users/michelleye/Documents/Adaptive-Deep-Networks"
+  },
+  "members": [
+    {
+      "memberId": "team-lead@experiment-dev",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    }
+  ]
+}

@@ -26,10 +26,10 @@ VALIDATIONS = [
         'description': '验证AttnRes的梯度流均匀性 (CV改善7.6x)'
     },
     {
-        'id': 'turboquant',
-        'name': 'TurboQuant Compression',
-        'script': 'turboquant_compression.py',
-        'description': '验证6x+压缩比和零精度损失'
+        'id': 'rabitq',
+        'name': 'RaBitQ Compression',
+        'script': 'legacy/turboquant_compression.py',
+        'description': '验证~5x压缩比和重构质量'
     },
     {
         'id': 'table4',
