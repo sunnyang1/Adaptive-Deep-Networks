@@ -8,6 +8,7 @@ import sys
 import json
 import numpy as np
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
@@ -170,9 +171,9 @@ def verify_dual_hierarchy(
         'gap': float(gap),
         'gap_relative': float(gap_relative),
         'acceptance': {
-            'hierarchy_verified': hierarchy_verified,
-            'gap_sufficient': gap_sufficient,
-            'overall_pass': hierarchy_verified and gap_sufficient
+            'hierarchy_verified': bool(hierarchy_verified),
+            'gap_sufficient': bool(gap_sufficient),
+            'overall_pass': bool(hierarchy_verified and gap_sufficient)
         }
     }
     

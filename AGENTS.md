@@ -68,6 +68,38 @@ Run specific module:
 pytest tests/unit/test_attnres.py -v
 ```
 
+## MATDO Real Model Testing
+
+Run MATDO experiments (US1–US6) with actual `AdaptiveTransformer` model:
+
+```bash
+# Full suite with random initialization (small = 1.1B params)
+python experiments/matdo/run_all_experiments.py --use-real-model --size small
+
+# With pretrained weights
+python experiments/matdo/run_all_experiments.py \
+    --use-real-model \
+    --checkpoint checkpoints/adb_medium.pt
+
+# Quick validation (US4–US6 only)
+python experiments/matdo/run_all_experiments.py \
+    --use-real-model \
+    --skip-us1 --skip-us2 --skip-us3 \
+    --size small --device mps  # Apple Silicon
+```
+
+**Key flags:**
+- `--use-real-model`: Enable real model mode (default: simulation)
+- `--size {small,medium,large}`: Model configuration
+- `--checkpoint PATH`: Load pretrained weights
+- `--device {cuda,mps,cpu}`: Compute device
+
+**Implementation notes:**
+- US1–US3 default to simulation due to O(100) model evaluations each
+- US4 MATDO uses real model; SnapKV/H2O are simulated baselines
+- US5 uses `forward(use_attnres=..., use_qttt=...)` for component ablation
+- US6 collects real model errors on sparse (R,M,T) grid for RLS
+
 ## Validation Benchmarks
 
 1. **Needle-in-Haystack**: Long-context retrieval (target: 86.9% avg)

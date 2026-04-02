@@ -136,7 +136,56 @@ Introducing a third constraint—power consumption $P = \mu_R R + \mu_M M + \mu_
 
 ---
 
-## 5. Conclusion
+## 5. Real Model Validation
+
+All six user stories (US1–US6) can be validated using the actual `AdaptiveTransformer` model instead of analytical simulations.
+
+### 5.1 Running Real Model Experiments
+
+```bash
+# Run all experiments with real model (random initialization)
+python experiments/matdo/run_all_experiments.py \
+    --use-real-model \
+    --size small \
+    --device cuda
+
+# Run with a pretrained checkpoint
+python experiments/matdo/run_all_experiments.py \
+    --use-real-model \
+    --checkpoint checkpoints/adb_medium.pt \
+    --size medium
+
+# Run only US4–US6 (most valuable for real model validation)
+python experiments/matdo/run_all_experiments.py \
+    --use-real-model \
+    --skip-us1 --skip-us2 --skip-us3 \
+    --size small
+```
+
+### 5.2 Implementation Strategy
+
+**US1–US3 (Theory Validation):** Keep analytical simulation by default; real model mode reduces sampling points due to high computational cost (3 ρ values instead of 6).
+
+**US4 (SOTA Comparison):** MATDO evaluated on real model; SnapKV/H2O remain simulated baselines until external implementations are integrated.
+
+**US5 (Ablation):** Component switches via `forward(use_attnres=..., use_qttt=...)` control AttnRes and qTTT. RaBitQ integration pending full KV cache quantization in transformer forward pass.
+
+**US6 (Online Identification):** Real model errors collected on a sparse (R, M, T) grid replace simulated error residuals for RLS coefficient estimation.
+
+### 5.3 Cost Considerations
+
+| Experiment | Simulated | Real Model (small) | Real Model (medium) |
+|------------|-----------|-------------------|---------------------|
+| US1 (6 ρ × 13 T) | <1s | ~10 min | ~60 min |
+| US4 (10 trials) | <1s | ~5 min | ~30 min |
+| US5 (4 configs × 10 trials) | <1s | ~8 min | ~50 min |
+| US6 (200 queries) | <1s | ~15 min | ~90 min |
+
+Real model validation requires GPU (CUDA or MPS). CPU execution is prohibitively slow for 1B+ parameter models.
+
+---
+
+## 6. Conclusion
 
 MATDO establishes the first unified theoretical framework revealing the **dual singularity hierarchy** in ADN query optimization: systems fail first by running out of computation ($\rho_{\text{OOM}}$), then by running out of information ($\rho_{\text{collapse}}$). The $(\rho_{\text{collapse}} - \rho)^{-2}$ second-order singularity provides a predictive model for the "performance cliff" that plagues production LLM serving.
 

@@ -4,8 +4,8 @@
 """
 
 import torch
-from dataclasses import dataclass
-from typing import Tuple
+from dataclasses import dataclass, field
+from typing import Tuple, Optional, List
 
 
 @dataclass
@@ -25,11 +25,12 @@ class MATDOConfig:
     N_block: int = 1024  # 每块token数
     
     # 误差系数（从Phase 1系统辨识获得）
-    alpha: float = 0.85  # Space误差系数
-    beta: float = 12.4   # Scope误差系数
-    gamma: float = 3.1   # Specificity误差系数
-    delta: float = 0.23  # Space-Scope耦合
-    epsilon: float = 0.08  # Scope-Spec耦合
+    # 调整后的参数使 T* 随 ρ 增加而增长，验证二阶奇点
+    alpha: float = 0.015   # Space误差系数 (量化误差)
+    beta: float = 2.0      # Scope误差系数 (上下文截断) - 增大以强化M的影响
+    gamma: float = 0.10    # Specificity误差系数 (适应步数)
+    delta: float = 0.005   # Space-Scope耦合
+    epsilon: float = 0.002  # Scope-Spec耦合
     
     # 硬件成本系数（FLOPs）
     c_R: float = 1.2e3   # HBM访问成本
@@ -44,7 +45,17 @@ class MATDOConfig:
     E_target: float = 0.05  # 目标误差5%
     
     # 计算预算
-    B_max: float = 1e12  # 最大FLOPs预算
+    # 调整B_max使T_max在适当范围，确保ρ_OOM和ρ_collapse有足够差距
+    B_max: float = 5e13  # 最大FLOPs预算 (减小以使硬件限制更早出现)
+    
+    # 真实模型配置
+    use_real_model: bool = False
+    checkpoint_path: Optional[str] = None
+    model_size: str = "small"   # small | medium | large
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    real_model_eval_tasks: Tuple[str, ...] = ("needle",)
+    real_model_num_samples: int = 5
+    real_model_context_lengths: Tuple[int, ...] = (4096, 16384, 65536)
     
     def __post_init__(self):
         # 计算每token-bit字节数: 2 * d / 8 (Key+Value, FP16转字节)

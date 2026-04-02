@@ -37,7 +37,11 @@ def run_all_matdo_experiments(
     skip_us4: bool = False,
     skip_us5: bool = False,
     skip_us6: bool = False,
-    output_dir: Path = None
+    output_dir: Path = None,
+    use_real_model: bool = False,
+    checkpoint_path: str = None,
+    model_size: str = "small",
+    device: str = "cuda",
 ) -> Dict:
     """
     运行所有MATDO实验
@@ -58,10 +62,24 @@ def run_all_matdo_experiments(
         output_dir = Path(__file__).parent / "results"
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # 设置真实模型全局配置
+    from experiments.matdo.common.config import config as matdo_config
+    matdo_config.use_real_model = use_real_model
+    if use_real_model:
+        matdo_config.checkpoint_path = checkpoint_path
+        matdo_config.model_size = model_size
+        matdo_config.device = device
+        print_banner("MATDO真实模型实验套件启动")
+        print(f"模型大小: {model_size} | 设备: {device}")
+        if checkpoint_path:
+            print(f"检查点: {checkpoint_path}")
+        else:
+            print("注意: 未提供检查点，将使用随机初始化权重")
+    else:
+        print_banner("MATDO实验套件启动")
+    
     # 设置随机种子确保可复现
     np.random.seed(42)
-    
-    print_banner("MATDO实验套件启动")
     print(f"输出目录: {output_dir}")
     print(f"开始时间: {datetime.now().isoformat()}")
     print()
@@ -73,8 +91,13 @@ def run_all_matdo_experiments(
     if not skip_us1:
         print_banner("运行 US1: 二阶奇点标度律验证")
         try:
+            if use_real_model:
+                print("真实模型模式: 减少采样点以控制耗时")
+                us1_rhos = [0.80, 0.90, 0.94]
+            else:
+                us1_rhos = [0.70, 0.80, 0.88, 0.92, 0.94, 0.945]
             us1_results = run_singularity_experiment(
-                rhos=[0.85, 0.88, 0.91, 0.93, 0.94, 0.945],
+                rhos=us1_rhos,
                 output_dir=output_dir / "singularity"
             )
             all_results['US1'] = us1_results
@@ -117,22 +140,26 @@ def run_all_matdo_experiments(
     
     # ==================== US3: 存储密度溢价 ====================
     if not skip_us3:
-        print_banner("运行 US3: 存储密度溢价爆炸验证")
-        try:
-            if singularity_results_file and singularity_results_file.exists():
-                us3_results = verify_lambda2_explosion(
-                    singularity_results_file=singularity_results_file,
-                    output_dir=output_dir / "shadow_price"
-                )
-            else:
-                print("⚠️ 未找到US1结果，使用默认参数")
-                us3_results = verify_lambda2_explosion(
-                    output_dir=output_dir / "shadow_price"
-                )
-            all_results['US3'] = us3_results
-        except Exception as e:
-            print(f"❌ US3 失败: {e}")
-            all_results['US3'] = {'error': str(e)}
+        if use_real_model:
+            print_banner("跳过 US3: 真实模型模式下暂不做存储密度溢价解析验证")
+            all_results['US3'] = {'skipped': True, 'reason': 'Not supported in real-model mode'}
+        else:
+            print_banner("运行 US3: 存储密度溢价爆炸验证")
+            try:
+                if singularity_results_file and singularity_results_file.exists():
+                    us3_results = verify_lambda2_explosion(
+                        singularity_results_file=singularity_results_file,
+                        output_dir=output_dir / "shadow_price"
+                    )
+                else:
+                    print("⚠️ 未找到US1结果，使用默认参数")
+                    us3_results = verify_lambda2_explosion(
+                        output_dir=output_dir / "shadow_price"
+                    )
+                all_results['US3'] = us3_results
+            except Exception as e:
+                print(f"❌ US3 失败: {e}")
+                all_results['US3'] = {'error': str(e)}
     else:
         print("跳过 US3")
     
@@ -173,8 +200,8 @@ def run_all_matdo_experiments(
         print_banner("运行 US6: 在线系统辨识")
         try:
             us6_results = run_online_identification(
-                num_queries=100,
-                lambda_=0.95,
+                num_queries=200,
+                lambda_=0.98,
                 output_dir=output_dir / "online_identification"
             )
             all_results['US6'] = us6_results
@@ -258,6 +285,10 @@ if __name__ == "__main__":
     parser.add_argument("--skip-us5", action="store_true", help="跳过US5")
     parser.add_argument("--skip-us6", action="store_true", help="跳过US6")
     parser.add_argument("--output-dir", type=Path, default=None, help="输出目录")
+    parser.add_argument("--use-real-model", action="store_true", help="使用真实模型进行实验")
+    parser.add_argument("--checkpoint", type=str, default=None, help="模型检查点路径")
+    parser.add_argument("--size", type=str, default="small", choices=["small", "medium", "large"], help="模型大小")
+    parser.add_argument("--device", type=str, default="cuda", help="计算设备")
     
     args = parser.parse_args()
     
@@ -268,5 +299,9 @@ if __name__ == "__main__":
         skip_us4=args.skip_us4,
         skip_us5=args.skip_us5,
         skip_us6=args.skip_us6,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        use_real_model=args.use_real_model,
+        checkpoint_path=args.checkpoint,
+        model_size=args.size,
+        device=args.device,
     )

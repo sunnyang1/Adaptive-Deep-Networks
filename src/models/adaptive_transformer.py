@@ -113,7 +113,7 @@ class AdaptiveMLP(nn.Module):
 
 class AdaptiveLayer(nn.Module):
     """
-    Single transformer layer with AttnRes.
+    Single transformer layer with optional AttnRes.
     
     Structure:
     1. AttnRes -> Attention -> Residual
@@ -134,7 +134,7 @@ class AdaptiveLayer(nn.Module):
         self.mlp = AdaptiveMLP(config)
         
         # Track if this is a block boundary
-        layers_per_block = config.num_layers // config.num_blocks
+        layers_per_block = max(config.num_layers // max(config.num_blocks, 1), 1)
         self.is_block_boundary = (layer_idx + 1) % layers_per_block == 0
     
     def forward(
@@ -142,7 +142,8 @@ class AdaptiveLayer(nn.Module):
         hidden_states: torch.Tensor,
         block_representations: List[torch.Tensor],
         partial_block: torch.Tensor,
-        attnres_module: BlockAttnRes,
+        attnres_module: Optional[BlockAttnRes] = None,
+        use_attnres: bool = True,
         use_qttt: bool = False,
         kv_cache: Optional[KVCache] = None,
         adapted_query: Optional[torch.Tensor] = None
@@ -163,26 +164,32 @@ class AdaptiveLayer(nn.Module):
             output: Updated hidden states
             updated_partial: Updated partial block sum
         """
-        # Phase 1: Inter-block attention before Attention layer
-        h_attn, _ = attnres_module(
-            block_representations,
-            partial_block,
-            use_attn=True,
-            use_mlp=False
-        )
+        if use_attnres and attnres_module is not None:
+            # Phase 1: Inter-block attention before Attention layer
+            h_attn, _ = attnres_module(
+                block_representations,
+                partial_block,
+                use_attn=True,
+                use_mlp=False
+            )
+        else:
+            h_attn = partial_block
         
         # Attention layer
         normed = self.attn_norm(h_attn)
         attn_out = self.attn(normed, kv_cache, adapted_query)
         partial_block = partial_block + attn_out
         
-        # Phase 1: Inter-block attention before MLP layer
-        _, h_mlp = attnres_module(
-            block_representations,
-            partial_block,
-            use_attn=False,
-            use_mlp=True
-        )
+        if use_attnres and attnres_module is not None:
+            # Phase 1: Inter-block attention before MLP layer
+            _, h_mlp = attnres_module(
+                block_representations,
+                partial_block,
+                use_attn=False,
+                use_mlp=True
+            )
+        else:
+            h_mlp = partial_block
         
         # MLP layer
         normed = self.mlp_norm(h_mlp)
@@ -246,6 +253,7 @@ class AdaptiveTransformer(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
+        use_attnres: bool = True,
         use_qttt: bool = False,
         qttt_config: Optional[Dict] = None
     ) -> torch.Tensor:
@@ -266,9 +274,9 @@ class AdaptiveTransformer(nn.Module):
         hidden = self.token_embedding(input_ids)
         
         # Block management
-        layers_per_block = self.config.num_layers // self.config.num_blocks
-        block_representations = [hidden]  # Start with embeddings
-        partial_block = torch.zeros_like(hidden)
+        layers_per_block = max(self.config.num_layers // max(self.config.num_blocks, 1), 1)
+        block_representations = [hidden] if use_attnres else []
+        partial_block = torch.zeros_like(hidden) if use_attnres else hidden
         
         # Track for potential qTTT
         kv_cache = None
@@ -277,7 +285,7 @@ class AdaptiveTransformer(nn.Module):
         # Process layers
         for layer_idx, (layer, attnres) in enumerate(zip(self.layers, self.attnres_modules)):
             # Check if we need to finalize a block
-            if layer_idx > 0 and layer_idx % layers_per_block == 0:
+            if use_attnres and layer_idx > 0 and layer_idx % layers_per_block == 0:
                 block_representations.append(partial_block)
                 partial_block = torch.zeros_like(hidden)
             
@@ -286,7 +294,8 @@ class AdaptiveTransformer(nn.Module):
                 hidden,
                 block_representations,
                 partial_block,
-                attnres,
+                attnres if use_attnres else None,
+                use_attnres=use_attnres,
                 use_qttt=use_qttt,
                 kv_cache=kv_cache,
                 adapted_query=adapted_query
@@ -315,6 +324,54 @@ class AdaptiveTransformer(nn.Module):
         v = v.view(B, T, self.config.num_heads, head_dim).transpose(1, 2)
         
         return KVCache(k, v)
+    
+    @torch.no_grad()
+    def generate(
+        self,
+        input_ids: torch.Tensor,
+        max_new_tokens: int = 50,
+        temperature: float = 1.0,
+        top_k: Optional[int] = None,
+        use_attnres: bool = True,
+        use_qttt: bool = False,
+    ) -> torch.Tensor:
+        """
+        Greedy/top-k generation.
+        
+        Args:
+            input_ids: [B, T] initial token ids
+            max_new_tokens: number of tokens to generate
+            temperature: sampling temperature
+            top_k: if set, restrict to top-k tokens
+            use_attnres: whether to use AttnRes during generation
+            use_qttt: whether to use qTTT during generation
+        
+        Returns:
+            output_ids: [B, T + max_new_tokens]
+        """
+        self.eval()
+        output_ids = input_ids.clone()
+        
+        for _ in range(max_new_tokens):
+            logits = self.forward(
+                output_ids,
+                use_attnres=use_attnres,
+                use_qttt=use_qttt
+            )
+            
+            # Take last token logits
+            next_token_logits = logits[:, -1, :] / temperature
+            
+            if top_k is not None:
+                v, _ = torch.topk(next_token_logits, min(top_k, next_token_logits.size(-1)))
+                next_token_logits[next_token_logits < v[:, [-1]]] = float('-inf')
+            
+            probs = F.softmax(next_token_logits, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
+            
+            output_ids = torch.cat([output_ids, next_token], dim=1)
+        
+        return output_ids
     
     def count_parameters(self) -> int:
         """Count trainable parameters."""
