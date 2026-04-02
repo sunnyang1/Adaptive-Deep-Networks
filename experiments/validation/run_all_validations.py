@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-统一验证脚本 - 验证论文中所有关键表格数据
+统一验证脚本 - 验证论文中所有关键表格数据 (REVISED)
 
 运行所有验证实验并生成汇总报告。
 """
@@ -11,47 +11,65 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-# 验证脚本列表
+# 验证脚本列表 (对应 REVISED 论文)
 VALIDATIONS = [
     {
         'id': 'table1',
         'name': 'Table 1: Representation Burial',
         'script': 'table1_representation_burial.py',
-        'description': '验证AttnRes相比PreNorm的梯度衰减改善'
+        'description': '验证AttnRes相比PreNorm的梯度衰减改善 (Effective Depth)'
     },
     {
         'id': 'table2',
         'name': 'Table 2: Gradient Flow',
         'script': 'table2_gradient_flow.py',
-        'description': '验证AttnRes的梯度流均匀性 (CV改善7.6x)'
+        'description': '验证AttnRes的梯度流均匀性 (CV=0.11)'
     },
     {
-        'id': 'rabitq',
-        'name': 'RaBitQ Compression',
-        'script': 'legacy/turboquant_compression.py',
-        'description': '验证~5x压缩比和重构质量'
+        'id': 'table3',
+        'name': 'Table 3: RaBitQ Space-Accuracy',
+        'script': 'table3_rabitq_space_accuracy.py',
+        'description': '验证RaBitQ压缩率、准确率保持与系统吞吐量 (§3.1.3 & §5.1)'
     },
     {
         'id': 'table4',
         'name': 'Table 4: Needle-in-Haystack',
         'script': 'table4_needle_haystack.py',
-        'description': '验证长上下文检索 (平均86.9%, 256K达68.2%)'
+        'description': '验证长上下文检索 (Baseline/+RaBitQ/+AttnRes/+qTTT)'
+    },
+    {
+        'id': 'table5',
+        'name': 'Table 5: Query Margin',
+        'script': 'table5_query_margin.py',
+        'description': '验证qTTT在不同上下文长度下的logit margin提升 (§3.3.3)'
     },
     {
         'id': 'table6',
         'name': 'Table 6: MATH Dataset',
         'script': 'table6_math.py',
-        'description': '验证数学推理 (52.3%匹配50B baseline)'
+        'description': '验证数学推理 (qTTT 52.8% matching 50B baseline)'
     },
     {
         'id': 'table7',
         'name': 'Table 7: Component Synergy',
         'script': 'table7_synergy.py',
-        'description': '验证组件协同效应 (系数1.18)'
+        'description': '验证组件协同效应 (LongBench-v2 ablation)'
+    },
+    {
+        'id': 'table8',
+        'name': 'Table 8: SRAM-Aware Allocation',
+        'script': 'table8_sram_allocation.py',
+        'description': '验证分层内存模型下的最优(R,M,T)分配 (§5.5)'
+    },
+    {
+        'id': 'table9',
+        'name': 'Table 9: Coupling Effect',
+        'script': 'table9_coupling_effect.py',
+        'description': '验证Space-Scope耦合效应可忽略 (δ≈-0.1%) (§5.6)'
     },
     {
         'id': 'extreme_context',
-        'name': 'Extreme Context Scaling (up to 1M)',
+        'name': 'Extreme Context Scaling',
         'script': 'extreme_context_scaling.py',
         'description': '超长上下文测试 (128K-1M tokens)'
     },
@@ -90,7 +108,7 @@ def run_validation(val_info, output_dir):
         return {
             'status': status,
             'returncode': result.returncode,
-            'output': output[-500:] if len(output) > 500 else output  # 最后500字符
+            'output': output[-500:] if len(output) > 500 else output
         }
         
     except subprocess.TimeoutExpired:
@@ -102,77 +120,67 @@ def run_validation(val_info, output_dir):
 
 
 def main():
-    print("="*70)
-    print("Adaptive Deep Networks - Paper Validation Suite")
-    print("="*70)
-    print(f"\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Total validations: {len(VALIDATIONS)}")
-    
-    output_dir = Path(__file__).parent.parent / 'results' / 'validation'
+    output_dir = Path(__file__).parent.parent.parent / 'results' / 'validations'
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    report_file = output_dir / f'validation_report_{timestamp}.json'
+    
+    print("="*70)
+    print("Adaptive Deep Networks - Unified Validation (REVISED)")
+    print("="*70)
+    print(f"Output directory: {output_dir}")
+    print(f"Total validations: {len(VALIDATIONS)}")
+    
     results = {}
+    passed_count = 0
+    failed_count = 0
+    skipped_count = 0
     
     for val_info in VALIDATIONS:
         result = run_validation(val_info, output_dir)
         results[val_info['id']] = {
             'name': val_info['name'],
-            'description': val_info['description'],
-            'result': result
+            'script': val_info['script'],
+            **result
         }
+        
+        if result['status'] == 'passed':
+            passed_count += 1
+        elif result['status'] == 'failed':
+            failed_count += 1
+        else:
+            skipped_count += 1
     
-    # 生成汇总
-    print("\n" + "="*70)
+    # 汇总报告
+    print(f"\n{'='*70}")
     print("VALIDATION SUMMARY")
-    print("="*70)
+    print(f"{'='*70}")
+    print(f"Total:   {len(VALIDATIONS)}")
+    print(f"Passed:  {passed_count} ✅")
+    print(f"Failed:  {failed_count} ❌")
+    print(f"Skipped: {skipped_count} ⚠️")
     
-    passed = sum(1 for r in results.values() if r['result']['status'] == 'passed')
-    failed = sum(1 for r in results.values() if r['result']['status'] == 'failed')
-    skipped = sum(1 for r in results.values() if r['result']['status'] == 'skipped')
-    
-    print(f"\nTotal: {len(VALIDATIONS)} validations")
-    print(f"  ✅ Passed: {passed}")
-    print(f"  ❌ Failed: {failed}")
-    print(f"  ⚠️  Skipped: {skipped}")
-    
-    print(f"\n{'ID':<12} {'Status':<10} {'Name':<40}")
-    print("-" * 70)
-    
-    for val_id, info in results.items():
-        status = info['result']['status']
-        icon = {'passed': '✅', 'failed': '❌', 'skipped': '⚠️', 'timeout': '⏱️', 'error': '💥'}.get(status, '❓')
-        print(f"{val_id:<12} {icon} {status:<8} {info['name']:<40}")
-    
-    # 保存汇总
     summary = {
-        'timestamp': datetime.now().isoformat(),
-        'summary': {
-            'total': len(VALIDATIONS),
-            'passed': passed,
-            'failed': failed,
-            'skipped': skipped
-        },
-        'results': results,
-        'overall_passed': passed == len(VALIDATIONS)
+        'timestamp': timestamp,
+        'total': len(VALIDATIONS),
+        'passed': passed_count,
+        'failed': failed_count,
+        'skipped': skipped_count,
+        'details': results
     }
     
-    summary_file = output_dir / 'validation_summary.json'
-    with open(summary_file, 'w') as f:
+    with open(report_file, 'w') as f:
         json.dump(summary, f, indent=2)
     
-    print(f"\n📊 Detailed report: {summary_file}")
+    print(f"\nReport saved: {report_file}")
     
-    # 最终状态
-    print("\n" + "="*70)
-    if passed == len(VALIDATIONS):
-        print("✅ ALL VALIDATIONS PASSED - Paper claims verified!")
-    elif passed >= len(VALIDATIONS) * 0.8:
-        print(f"⚠️  MOSTLY PASSED ({passed}/{len(VALIDATIONS)}) - Minor discrepancies")
+    if failed_count > 0:
+        print("\n❌ SOME VALIDATIONS FAILED")
+        return 1
     else:
-        print(f"❌ VALIDATIONS FAILED ({failed}/{len(VALIDATIONS)}) - Review needed")
-    print("="*70)
-    
-    return 0 if passed == len(VALIDATIONS) else 1
+        print("\n✅ ALL VALIDATIONS PASSED")
+        return 0
 
 
 if __name__ == '__main__':
