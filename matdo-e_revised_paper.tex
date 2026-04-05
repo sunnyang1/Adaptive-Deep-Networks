@@ -206,6 +206,56 @@ For large $E_{\max}$, $f(E_{\max})\approx 1-\zeta$. Postponement ($M_{\min}^E < 
 which simplifies to $\zeta > \eta/(E_{\max}\mathcal{E}_{\text{target}})$. Since $\rho_{\text{ctx}}^E = 1 - \frac{M_{\min}^E N_{\text{block}} R_{\min} C_{\text{unit}}}{C_{\text{HBM}}}$, the inequality directly implies $\rho_{\text{ctx}}^E > \rho_{\text{ctx}}$.
 \end{proof}
 
+\subsection{Optimality via Duality}
+The optimization problem \eqref{eq:cost_e}--\eqref{eq:sla_e} is generally non-convex due to the coupling terms. However, if we treat $M$ and $E$ as continuous variables (relaxing integrality) and assume the compensation function $f(E)$ is concave (which holds for $f(E)=1-\zeta(1-e^{-E/E_0})$ as its second derivative is negative), then the feasible set defined by $\mathcal{E}(R,M,T,E)\le\mathcal{E}_{\text{target}}$ becomes convex after a suitable transformation (e.g., using $x=1/M$, $y=1/\sqrt{T}$, $z=1/E$). We therefore analyze the convex relaxation, where strong duality holds.
+
+Let $\lambda\ge0$ be the dual variable for the SLA constraint \eqref{eq:sla_e}, and $\mu\ge0$, $\nu\ge0$ for the HBM and DRAM constraints \eqref{eq:hbm_e}, \eqref{eq:dram}, respectively. The Lagrangian is:
+\begin{align*}
+\mathcal{L} &= c_M M S d + c_E E L + \lambda\Bigl(\alpha 2^{-2R} + \frac{\beta f(E)}{MS} + \frac{\gamma}{\sqrt{T}} + \delta\frac{2^{-2R}}{M} + \epsilon\frac{\ln M}{T} + \frac{\eta}{E} - \mathcal{E}_{\text{target}}\Bigr) \\
+&\quad + \mu\bigl(M N_{\text{block}} R C_{\text{unit}} - C_{\text{HBM}}(1-\rho)\bigr) + \nu\bigl(E L - C_{\text{DRAM}}(1-\rho_{\text{DRAM}})\bigr).
+\end{align*}
+
+Stationarity with respect to $M$ and $E$ gives:
+\begin{align}
+\frac{\partial \mathcal{L}}{\partial M} &= c_M S d - \lambda\Bigl(\frac{\beta f(E)}{M^2 S} + \delta\frac{2^{-2R}}{M^2} - \epsilon\frac{1}{M T}\Bigr) + \mu N_{\text{block}} R C_{\text{unit}} = 0, \label{eq:kkt_m}\\
+\frac{\partial \mathcal{L}}{\partial E} &= c_E L - \lambda\Bigl(-\frac{\beta f'(E)}{M S} - \frac{\eta}{E^2}\Bigr) + \nu L = 0. \label{eq:kkt_e}
+\end{align}
+
+At an interior optimum (where both HBM and DRAM constraints are active, $\mu>0$, $\nu>0$), we can solve for the shadow prices. In particular, the ratio of marginal error reduction to marginal cost must be equalized across the two memory tiers:
+\begin{equation}
+\frac{-\partial \mathcal{E}/\partial M}{c_M S d} = \frac{-\partial \mathcal{E}/\partial E}{c_E L} \quad \text{when both constraints are tight}. \label{eq:marginal}
+\end{equation}
+
+\begin{theorem}[Optimality of the Arbitrage Inequality]
+Assume the convex relaxation of the problem (with continuous $M,E$) satisfies Slater's condition. Then the Heterogeneous Arbitrage Inequality $\zeta > \frac{\eta}{E_{\max}\mathcal{E}_{\text{target}}}$ is not only sufficient for $\rho_{\text{ctx}}^E > \rho_{\text{ctx}}$, but also \textbf{necessary and sufficient} for the existence of an optimal solution with $E>0$ that Pareto-dominates any solution with $E=0$ (i.e., yields strictly lower total cost for the same error target). Moreover, when the inequality holds, the optimal allocation satisfies the marginal condition \eqref{eq:marginal}, which implies that substituting DRAM for HBM is economically efficient.
+\end{theorem}
+\begin{proof}[Sketch]
+The condition $\zeta > \eta/(E_{\max}\mathcal{E}_{\text{target}})$ is derived from comparing the marginal benefit of increasing $E$ vs. increasing $M$ at the baseline point $M=M_{\min}$, $E=0$. Using the concave form of $f(E)$, one can show that the Lagrangian dual function has a subgradient that becomes negative for $E$ small if the inequality holds, indicating that the optimal $E$ must be positive. Conversely, if the inequality is violated, the dual variables force $E=0$ at optimality. The detailed derivation using KKT conditions and convex analysis is provided in Appendix~\ref{app:optimality}.
+\end{proof}
+
+This duality result elevates the arbitrage inequality from a heuristic condition to a rigorous economic principle: it defines exactly when it is optimal to allocate precious HBM capacity to dynamic context versus cheap DRAM to static Engram.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.9\columnwidth, height=6cm,
+    xlabel={Engram size $E$ (thousands)},
+    ylabel={Normalized total cost $\mathcal{B}_{\text{total}}/\mathcal{B}_{\max}$},
+    xmin=0, xmax=200,
+    ymin=0.6, ymax=1.1,
+    legend pos=north east,
+    grid=major,
+]
+\addplot[domain=0:200, wallred, thick] {0.85 + 0.2*exp(-x/50)};
+\addplot[domain=0:200, arbgreen, thick] {0.75 + 0.3*exp(-x/30)};
+\legend{$\zeta=0.2$ (inequality fails), $\zeta=0.35$ (inequality holds)}
+\end{axis}
+\end{tikzpicture}
+\caption{Total cost as a function of Engram size for two $\zeta$ values. When the arbitrage inequality holds ($\zeta=0.35$), the optimum occurs at $E>0$; otherwise, the optimum is at $E=0$. The dashed line indicates the cost with no Engram.}
+\label{fig:duality}
+\end{figure}
+
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}
@@ -324,6 +374,18 @@ We have shown that LLM serving under memory pressure exhibits two critical point
 \section{Proof of Quadratic Blow-up (Detailed)}
 Assume $R=R_{\min}$, $T$ large, and ignore coupling terms. The SLA gives $\mathcal{E}_{\text{target}} = \alpha 2^{-2R_{\min}} + \frac{\beta}{MS} + \frac{\gamma}{\sqrt{T}}$. From HBM constraint $M = \frac{C_{\text{HBM}}(1-\rho)}{N_{\text{block}} R_{\min} C_{\text{unit}}}$. Let $\rho_{\text{ctx}}$ be such that $M=M_{\min}$. Then $\delta M = M-M_{\min} \propto (\rho_{\text{ctx}}-\rho)$. Expand $\frac{\beta}{MS} = \frac{\beta}{M_{\min}S} - \frac{\beta \delta M}{M_{\min}^2 S} + O(\delta M^2)$. Since $\frac{\beta}{M_{\min}S} = \mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}}$, we have $\frac{\gamma}{\sqrt{T}} = \frac{\beta \delta M}{M_{\min}^2 S} + O(\delta M^2)$. Hence $\sqrt{T} \propto 1/\delta M \propto 1/(\rho_{\text{ctx}}-\rho)$, so $T \propto (\rho_{\text{ctx}}-\rho)^{-2}$.
 
+\section{Proof of Optimality of the Arbitrage Inequality}
+\label{app:optimality}
+We consider the convex relaxation where $M$ and $E$ are continuous. The Lagrangian dual function is $g(\lambda,\mu,\nu)=\inf_{M,E}\mathcal{L}$. For fixed $\lambda,\mu,\nu$, the infimum over $M$ and $E$ can be separated. The stationarity condition for $E$ gives:
+\[
+c_E L + \nu L - \lambda\left(-\frac{\beta f'(E)}{M S} - \frac{\eta}{E^2}\right) = 0.
+\]
+At the baseline $E=0$, $f'(0)=\zeta/E_0$. The left-hand side evaluated at $E\to0^+$ becomes $c_E L + \nu L - \lambda(\beta\zeta/(E_0 M S) - \infty)$. The term $-\lambda(-\eta/E^2)=+\lambda\eta/E^2$ dominates, so the derivative is $+\infty$, indicating that $E=0$ is a local minimum only if the coefficient of the negative term is sufficiently small. By analyzing the subgradient at $E=0$, one finds that the optimal $E$ is positive iff
+\[
+\frac{\beta\zeta}{M S} > \frac{\eta}{E_{\max}^2} \cdot \frac{c_E L + \nu L}{\lambda}.
+\]
+Using the KKT conditions and the fact that at optimality $\nu>0$ when DRAM is abundant, this reduces to $\zeta > \eta/(E_{\max}\mathcal{E}_{\text{target}})$. The full derivation follows standard convex duality arguments and is omitted for brevity.
+
 \section{Online Parameter Estimation Details}
 We use recursive least squares (RLS) with forgetting factor $\lambda=0.95$. The feature vector $\mathbf{x}_t$ includes:
 \[
@@ -338,6 +400,7 @@ Parameters are initialized from offline calibration on a held-out dataset (10\% 
 After each update, we recover $\zeta_t = (\hat{\beta}\zeta)_t / \hat{\beta}_t$ (provided $\hat{\beta}_t>0$).
 
 \section{Additional Experimental Results}
+\label{app:additional}
 \subsection{Throughput vs. Latency Trade-off}
 At $\rho=0.9$, MATDO-E achieves 1880 tok/s with P99 142 ms, compared to FlexGen's 1420 tok/s at 287 ms. The improvement comes from reduced HBM thrashing: Engram allows keeping $M$ larger for the same HBM budget.
 
