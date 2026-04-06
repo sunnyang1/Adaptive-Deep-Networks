@@ -1,205 +1,205 @@
 #!/bin/bash
-# =============================================================================
-# A100 80G 新手一键设置脚本
+# A100环境一键设置脚本
 # 使用方法: bash scripts/setup/a100_setup.sh
-# =============================================================================
 
 set -e  # 遇到错误立即退出
 
-echo "============================================================"
-echo "  A100 80G 环境自动设置脚本"
-echo "============================================================"
-echo ""
+echo "=========================================="
+echo "MATDO-E A100 80G Environment Setup"
+echo "=========================================="
 
-# 颜色定义
+# 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 检查是否在项目目录
-if [ ! -f "pyproject.toml" ]; then
-    echo -e "${RED}错误: 请在项目根目录运行此脚本${NC}"
-    echo "请先执行: cd ~/adaptive-deep-networks"
-    exit 1
-fi
+# 检查函数
+check_command() {
+    if command -v $1 &> /dev/null; then
+        echo -e "${GREEN}✓${NC} $1 found"
+        return 0
+    else
+        echo -e "${RED}✗${NC} $1 not found"
+        return 1
+    fi
+}
 
-echo -e "${GREEN}✓${NC} 项目目录检查通过"
+# 1. 检查GPU
 echo ""
-
-# =============================================================================
-# Step 1: 系统检查
-# =============================================================================
-echo "[1/7] 系统检查..."
-echo "------------------------------------------------------------"
-
-# 检查 Python 版本
-PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
-echo "Python 版本: $PYTHON_VERSION"
-
-# 检查 CUDA
+echo "Step 1: Checking GPU..."
 if command -v nvidia-smi &> /dev/null; then
-    echo -e "${GREEN}✓${NC} nvidia-smi 已安装"
-    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | head -1)
+    echo -e "${GREEN}✓${NC} GPU found: $GPU_INFO"
+    
+    # 检查是否是A100
+    if nvidia-smi | grep -q "A100"; then
+        echo -e "${GREEN}✓${NC} A100 detected"
+    else
+        echo -e "${YELLOW}⚠${NC} Warning: Not A100, but will try to continue"
+    fi
 else
-    echo -e "${RED}✗${NC} nvidia-smi 未找到，请检查 NVIDIA 驱动"
+    echo -e "${RED}✗${NC} nvidia-smi not found. Please install NVIDIA drivers first."
     exit 1
 fi
 
-# 检查磁盘空间
-DISK_AVAIL=$(df -h . | awk 'NR==2 {print $4}')
-echo "可用磁盘空间: $DISK_AVAIL"
+# 2. 检查CUDA
 echo ""
-
-# =============================================================================
-# Step 2: 创建虚拟环境
-# =============================================================================
-echo "[2/7] 创建 Python 虚拟环境..."
-echo "------------------------------------------------------------"
-
-if [ -d "venv" ]; then
-    echo -e "${YELLOW}!${NC} 虚拟环境已存在，跳过创建"
+echo "Step 2: Checking CUDA..."
+if command -v nvcc &> /dev/null; then
+    CUDA_VERSION=$(nvcc --version | grep "release" | awk '{print $5}' | cut -d',' -f1)
+    echo -e "${GREEN}✓${NC} CUDA found: $CUDA_VERSION"
+    
+    # 检查CUDA版本是否>=11.8
+    if [ "$(printf '%s\n' "11.8" "$CUDA_VERSION" | sort -V | head -n1)" = "11.8" ]; then
+        echo -e "${GREEN}✓${NC} CUDA version is sufficient (>=11.8)"
+    else
+        echo -e "${YELLOW}⚠${NC} CUDA version might be too old (<11.8)"
+    fi
 else
-    echo "创建虚拟环境..."
-    python3.10 -m venv venv 2>/dev/null || python3 -m venv venv
-    echo -e "${GREEN}✓${NC} 虚拟环境创建成功"
+    echo -e "${RED}✗${NC} CUDA not found. Please install CUDA toolkit."
+    exit 1
 fi
 
-echo "激活虚拟环境..."
-source venv/bin/activate
-echo -e "${GREEN}✓${NC} 虚拟环境已激活"
+# 3. 安装conda（如果没有）
 echo ""
-
-# =============================================================================
-# Step 3: 升级 pip
-# =============================================================================
-echo "[3/7] 升级 pip..."
-echo "------------------------------------------------------------"
-pip install --upgrade pip -q
-echo -e "${GREEN}✓${NC} pip 升级完成: $(pip --version)"
-echo ""
-
-# =============================================================================
-# Step 4: 安装 PyTorch (CUDA 12.1)
-# =============================================================================
-echo "[4/7] 安装 PyTorch + CUDA..."
-echo "------------------------------------------------------------"
-
-# 检查是否已安装 PyTorch
-if python -c "import torch; exit(0 if torch.__version__.startswith('2.1') else 1)" 2>/dev/null; then
-    echo -e "${YELLOW}!${NC} PyTorch 2.1 已安装，跳过"
+echo "Step 3: Checking/Installing Conda..."
+if command -v conda &> /dev/null; then
+    echo -e "${GREEN}✓${NC} Conda found: $(conda --version)"
 else
-    echo "安装 PyTorch 2.1.0 + CUDA 12.1..."
+    echo "Installing Miniconda..."
+    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
+    bash /tmp/miniconda.sh -b -p $HOME/miniconda3
+    source $HOME/miniconda3/bin/activate
+    conda init bash
+    echo -e "${GREEN}✓${NC} Miniconda installed"
+fi
+
+# 4. 创建Python环境
+echo ""
+echo "Step 4: Creating Python environment..."
+source ~/miniconda3/bin/activate 2>/dev/null || true
+
+if conda env list | grep -q "matdo"; then
+    echo -e "${GREEN}✓${NC} Environment 'matdo' already exists"
+else
+    echo "Creating new environment 'matdo'..."
+    conda create -n matdo python=3.10 -y
+    echo -e "${GREEN}✓${NC} Environment 'matdo' created"
+fi
+
+# 激活环境
+source ~/miniconda3/bin/activate matdo
+
+# 5. 安装PyTorch
+echo ""
+echo "Step 5: Installing PyTorch (CUDA 11.8)..."
+if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+    PYTORCH_VERSION=$(python -c "import torch; print(torch.__version__)")
+    echo -e "${GREEN}✓${NC} PyTorch already installed: $PYTORCH_VERSION"
+else
+    echo "Installing PyTorch 2.1.0 with CUDA 11.8..."
     pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
-        --index-url https://download.pytorch.org/whl/cu121
-    echo -e "${GREEN}✓${NC} PyTorch 安装完成"
+        --index-url https://download.pytorch.org/whl/cu118
+    echo -e "${GREEN}✓${NC} PyTorch installed"
 fi
 
-# 验证 PyTorch CUDA
+# 验证PyTorch GPU
+if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)"; then
+    GPU_NAME=$(python -c "import torch; print(torch.cuda.get_device_name(0))")
+    echo -e "${GREEN}✓${NC} PyTorch GPU working: $GPU_NAME"
+else
+    echo -e "${RED}✗${NC} PyTorch GPU not working!"
+    exit 1
+fi
+
+# 6. 安装项目依赖
+echo ""
+echo "Step 6: Installing project dependencies..."
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname $(dirname $SCRIPT_DIR))"
+
+cd $PROJECT_ROOT
+
+if [ -f "requirements.txt" ]; then
+    pip install -q -r requirements.txt
+    echo -e "${GREEN}✓${NC} Project dependencies installed"
+else
+    echo -e "${YELLOW}⚠${NC} requirements.txt not found, skipping"
+fi
+
+# 7. 安装额外依赖
+echo ""
+echo "Step 7: Installing additional dependencies..."
+pip install -q matplotlib seaborn pandas scipy scikit-learn tqdm tensorboard 2>/dev/null || true
+echo -e "${GREEN}✓${NC} Additional dependencies installed"
+
+# 8. 创建必要目录
+echo ""
+echo "Step 8: Creating directory structure..."
+mkdir -p data/raw data/processed data/engram
+mkdir -p checkpoints/small checkpoints/medium checkpoints/large
+mkdir -p results figures logs
+echo -e "${GREEN}✓${NC} Directories created"
+
+# 9. 测试MATDO-E核心模块
+echo ""
+echo "Step 9: Testing MATDO-E core modules..."
 python -c "
-import torch
-print(f'PyTorch 版本: {torch.__version__}')
-print(f'CUDA 可用: {torch.cuda.is_available()}')
-print(f'CUDA 版本: {torch.version.cuda}')
-if torch.cuda.is_available():
-    print(f'GPU: {torch.cuda.get_device_name(0)}')
-    print(f'显存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB')
-"
-echo ""
+from experiments.matdo.matdo_e.solver import MATDOESolver
+from experiments.matdo.common.config import config
+solver = MATDOESolver()
+opt = solver.solve(0.95)
+print(f'MATDO-E Solver: OK (rho=0.95 -> arbitrage={opt.is_arbitrage})')
+" 2>/dev/null && echo -e "${GREEN}✓${NC} MATDO-E solver working" || echo -e "${YELLOW}⚠${NC} MATDO-E solver test failed"
 
-# =============================================================================
-# Step 5: 安装项目依赖
-# =============================================================================
-echo "[5/7] 安装项目依赖..."
-echo "------------------------------------------------------------"
-
-echo "安装基础依赖（约需 2-3 分钟）..."
-pip install -q \
-    transformers==4.35.0 \
-    datasets==2.14.0 \
-    accelerate==0.24.0 \
-    numpy==1.24.0 \
-    scipy==1.11.0 \
-    matplotlib==3.8.0 \
-    seaborn==0.13.0 \
-    pandas==2.0.0 \
-    tqdm==4.66.0 \
-    wandb==0.15.0 \
-    pytest==7.4.0
-
-echo -e "${GREEN}✓${NC} 基础依赖安装完成"
-
-# 可选：安装 Flash Attention
+# 10. 生成示例配置
 echo ""
-echo "安装 Flash Attention（A100 专用加速，约需 5-10 分钟）..."
-echo -e "${YELLOW}!${NC} 按 Ctrl+C 跳过此步骤"
-sleep 3
+echo "Step 10: Generating example configs..."
+cat > configs/train_small_example.yaml << 'EOF'
+# MATDO-E Small Model Training Config
+model:
+  name: "matdo_e_small"
+  size: "small"
+  d_model: 1408
+  n_layers: 32
+  n_heads: 8
+  n_blocks: 8
 
-pip install flash-attn==2.3.0 --no-build-isolation || echo -e "${YELLOW}!${NC} Flash Attention 安装失败，继续..."
+training:
+  batch_size: 4
+  gradient_accumulation_steps: 8
+  learning_rate: 3.0e-4
+  num_epochs: 3
+  warmup_steps: 1000
+  max_seq_len: 8192
+  
+matdo_e:
+  enable_arbitrage: true
+  zeta: 0.35
+  eta: 0.5
+  E_max: 128000
+  
+hardware:
+  device: cuda
+  mixed_precision: fp16
+  
+checkpoint:
+  save_dir: "checkpoints/small"
+  save_every: 1000
+EOF
+echo -e "${GREEN}✓${NC} Example config created: configs/train_small_example.yaml"
 
+# 完成
 echo ""
-
-# =============================================================================
-# Step 6: 验证安装
-# =============================================================================
-echo "[6/7] 验证安装..."
-echo "------------------------------------------------------------"
-
-python -c "
-import sys
-sys.path.insert(0, 'src')
-
-try:
-    import torch
-    import transformers
-    from models.configs import AttnResMediumConfig
-    print(f'✓ PyTorch: {torch.__version__}')
-    print(f'✓ Transformers: {transformers.__version__}')
-    print(f'✓ CUDA 可用: {torch.cuda.is_available()}')
-    print(f'✓ 模型配置可导入')
-    print('')
-    print('所有核心组件验证通过！')
-except Exception as e:
-    print(f'✗ 验证失败: {e}')
-    sys.exit(1)
-"
-
+echo "=========================================="
+echo -e "${GREEN}Setup Complete!${NC}"
+echo "=========================================="
 echo ""
-
-# =============================================================================
-# Step 7: 完成提示
-# =============================================================================
-echo "[7/7] 设置完成！"
-echo "============================================================"
+echo "Next steps:"
+echo "1. Activate environment: conda activate matdo"
+echo "2. Start training: python scripts/train.py --config configs/train_small_example.yaml"
+echo "3. Or run tests: python experiments/matdo/run_all_experiments.py"
 echo ""
-echo -e "${GREEN}✓${NC} 环境设置完成！"
-echo ""
-echo "下一步操作："
-echo "------------------------------------------------------------"
-echo "1. 激活环境（每次新开终端都需要执行）："
-echo "   source venv/bin/activate"
-echo ""
-echo "2. 开始训练 Medium 模型（5.7B 参数，推荐）："
-echo "   tmux new-session -s training"
-echo "   python scripts/training/train_medium.py \\"
-echo "       --output-dir results/medium_model \\"
-echo "       --epochs 3 \\"
-echo "       --batch-size 4"
-echo ""
-echo "3. 查看详细指南："
-echo "   cat docs/A100_80G_COMPLETE_GUIDE.md"
-echo ""
-echo "4. 运行基准测试："
-echo "   python scripts/evaluation/run_benchmarks.py \\"
-echo "       --model-size medium \\"
-echo "       --benchmarks all"
-echo ""
-echo "------------------------------------------------------------"
-echo "常用命令："
-echo "  nvidia-smi          # 查看 GPU 状态"
-echo "  tmux attach -t training  # 重新连接到训练会话"
-echo "  htop                # 查看 CPU/内存使用"
-echo "------------------------------------------------------------"
-echo ""
-echo -e "${GREEN}祝训练顺利！🎉${NC}"
+echo "For detailed guide, see: MATDO_E_A100_BEGINNER_GUIDE.md"
 echo ""
