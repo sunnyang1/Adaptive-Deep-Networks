@@ -226,6 +226,8 @@ class TwoPhaseBlockAttnRes(nn.Module):
         # RMSNorm for key normalization (critical for performance)
         self.norm_attn = RMSNorm(dim, eps)
         self.norm_mlp = RMSNorm(dim, eps)
+        # Alias for two-phase helpers (keys use same norm as BlockAttnRes keys)
+        self.norm = self.norm_attn
     
     def forward(
         self,

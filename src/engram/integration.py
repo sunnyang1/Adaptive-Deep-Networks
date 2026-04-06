@@ -177,8 +177,9 @@ class AdaptiveTransformerWithEngram(AdaptiveTransformer):
             if hasattr(layer, 'engram') and layer.engram is not None:
                 layer_kwargs['input_ids'] = input_ids
             
-            # Forward through layer
-            partial_block, _ = layer(**layer_kwargs)
+            # Forward through layer (hidden_states required for AttnRes + Engram)
+            layer_kwargs['hidden_states'] = hidden
+            hidden, partial_block = layer(**layer_kwargs)
         
         # Final output
         hidden = partial_block if use_attnres else hidden

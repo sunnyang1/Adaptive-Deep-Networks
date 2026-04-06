@@ -575,6 +575,9 @@ class PolarQTTT(nn.Module):
             else:
                 target_token_ids = target_token_ids.unsqueeze(0).unsqueeze(0).expand(B, T)
         
+        # Safe token ids for cross-entropy (vocab may differ from sampling range)
+        target_token_ids = target_token_ids.clamp(0, V - 1)
+        
         # Compute loss based on type
         if self.config.loss_type == "cross_entropy":
             # Cross-entropy loss (default, §3.3.2)

@@ -631,13 +631,17 @@ class AdaptiveTransformer(nn.Module):
         adapted_query = None
         qttt_trigger_count = 0
         
+        next_token_logits = None
         for step in range(max_new_tokens):
             # Determine if qTTT should run this step
             should_run_qttt = use_qttt
-            if ponder_gate is not None and step > 0:
+            if ponder_gate is not None and step > 0 and next_token_logits is not None:
                 # Use last logits to decide (from previous iteration)
-                # For first step, always run if use_qttt is True
-                should_run_qttt = ponder_gate.should_adapt(next_token_logits)
+                adapt_decision = ponder_gate.should_adapt(next_token_logits)
+                if isinstance(adapt_decision, torch.Tensor):
+                    should_run_qttt = bool(adapt_decision.any().item())
+                else:
+                    should_run_qttt = adapt_decision
             
             if should_run_qttt:
                 qttt_trigger_count += 1
@@ -802,11 +806,16 @@ class AdaptiveTransformer(nn.Module):
         adapted_query = None
         qttt_trigger_count = 0
         
+        next_token_logits = None
         for step in range(max_new_tokens):
             # Determine if qTTT should run for this step
             should_run_qttt = use_qttt
-            if ponder_gate is not None and step > 0:
-                should_run_qttt = ponder_gate.should_adapt(next_token_logits)
+            if ponder_gate is not None and step > 0 and next_token_logits is not None:
+                adapt_decision = ponder_gate.should_adapt(next_token_logits)
+                if isinstance(adapt_decision, torch.Tensor):
+                    should_run_qttt = bool(adapt_decision.any().item())
+                else:
+                    should_run_qttt = adapt_decision
             
             if should_run_qttt:
                 qttt_trigger_count += 1
