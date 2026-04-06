@@ -7,6 +7,7 @@ Shared dataset and dataloader implementations.
 import torch
 from torch.utils.data import Dataset, DataLoader
 from typing import Optional, Iterator
+import itertools
 
 
 class HuggingFaceDataset(Dataset):
@@ -50,6 +51,7 @@ class HuggingFaceDataset(Dataset):
         print(f"Loading dataset: {dataset_name} ({dataset_config or 'default'}) [{split}]")
         print(f"Streaming: {streaming}, Max samples: {max_samples}")
         
+        self.streaming = streaming
         self.dataset = load_dataset(
             dataset_name,
             dataset_config,
@@ -68,6 +70,13 @@ class HuggingFaceDataset(Dataset):
             self.tokenized_data = self._pre_tokenize()
         else:
             self.tokenized_data = None
+        
+        # For streaming mode, cache first N items in memory
+        self.streaming_buffer = None
+        if streaming and max_samples:
+            print(f"Caching first {max_samples} samples from streaming dataset...")
+            self.streaming_buffer = list(itertools.islice(self.dataset, max_samples))
+            print(f"Cached {len(self.streaming_buffer)} samples")
     
     def _pre_tokenize(self):
         """Pre-tokenize entire dataset for faster access."""
@@ -96,7 +105,9 @@ class HuggingFaceDataset(Dataset):
     def __len__(self) -> int:
         if self.pre_tokenized:
             return len(self.tokenized_data)
-        # For streaming datasets, return a large number
+        if self.streaming_buffer is not None:
+            return len(self.streaming_buffer)
+        # For streaming datasets without buffer, return a large number
         return 1000000
     
     def __getitem__(self, idx: int) -> dict:
@@ -104,10 +115,23 @@ class HuggingFaceDataset(Dataset):
             tokens = self.tokenized_data[idx]
             input_ids = tokens[:self.seq_len]
             labels = tokens[1:self.seq_len + 1]
-        else:
-            # Streaming mode: get next item
-            item = self.dataset[idx]
-            text = item.get(self.text_column, "")
+        elif self.streaming_buffer is not None:
+            # Use cached streaming data
+            item = self.streaming_buffer[idx]
+            # Handle different item formats
+            if hasattr(item, 'get'):
+                # Dictionary-like object
+                text = item.get(self.text_column, "")
+            elif hasattr(item, self.text_column):
+                # Object with attribute access (e.g., IterableColumn)
+                text = getattr(item, self.text_column, "")
+            else:
+                # Fallback: try direct access
+                try:
+                    text = item[self.text_column] if isinstance(item, dict) else str(item)
+                except (TypeError, KeyError):
+                    text = ""
+            
             tokens = self._tokenize_text(text)
             
             # Create sliding window if text is long enough
@@ -118,6 +142,12 @@ class HuggingFaceDataset(Dataset):
                 # Pad short sequences
                 input_ids = tokens[:-1] + [0] * (self.seq_len - len(tokens) + 1)
                 labels = tokens[1:] + [0] * (self.seq_len - len(tokens) + 1)
+        else:
+            # Pure streaming mode without buffer - not supported for random access
+            raise RuntimeError(
+                "Streaming mode without buffer does not support random access. "
+                "Please set max_samples to cache data in memory, or use non-streaming mode."
+            )
         
         return {
             'input_ids': torch.tensor(input_ids, dtype=torch.long),
