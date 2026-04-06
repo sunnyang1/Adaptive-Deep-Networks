@@ -128,16 +128,17 @@ class TestTwoPhaseBlockAttnRes:
     def test_phase1_output_shape(self, two_phase):
         """Test Phase 1 output shape."""
         S, D = 4, 512
+        B, T = 2, 8
         pseudo_queries = torch.randn(S, D)
-        block_reps = [torch.randn(2, 8, D) for _ in range(3)]  # 3 blocks
+        block_reps = [torch.randn(B, T, D) for _ in range(3)]  # 3 blocks
         
         outputs, max_vals, lse = two_phase.phase1_inter_block(
             pseudo_queries, block_reps
         )
         
-        assert outputs.shape == (S, 2, 8, D)
-        assert max_vals.shape == (S, 2, 8)
-        assert lse.shape == (S, 2, 8)
+        assert outputs.shape == (S, B, T, D)
+        assert max_vals.shape == (S, B, T)
+        assert lse.shape == (S, B, T)
     
     def test_phase2_merge(self, two_phase):
         """Test Phase 2 online softmax merge."""

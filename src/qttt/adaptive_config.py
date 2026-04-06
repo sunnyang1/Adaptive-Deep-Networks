@@ -42,7 +42,8 @@ class AdaptiveQTTTConfig:
     max_steps: int = 16
     base_lr: float = 0.01
     min_lr: float = 0.001
-    seq_len_thresholds: List[int] = field(default_factory=lambda: [128, 512, 1024])
+    # Paper-scale contexts: below 4K vs 4K–32K vs 32K+ (not tokenizer window 128–1K)
+    seq_len_thresholds: List[int] = field(default_factory=lambda: [4096, 32768])
     scaling_mode: str = 'linear'
     
     def __post_init__(self):

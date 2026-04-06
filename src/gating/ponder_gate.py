@@ -57,6 +57,10 @@ class PonderGate:
         Returns:
             bool or tensor of bools: True if adaptation should be triggered
         """
+        # Use last sequence position when given full LM logits [B, T, V]
+        if logits.dim() == 3:
+            logits = logits[:, -1, :]
+
         # Compute metrics
         entropy = self.compute_entropy(logits)
         max_prob = self.compute_max_probability(logits)
@@ -69,9 +73,9 @@ class PonderGate:
         
         should_trigger = high_entropy | low_confidence
         
-        # Return scalar if single sample, else tensor
-        if should_trigger.numel() == 1:
-            return should_trigger.item()
+        # Single-row distributions [1, V] should return a Python bool (common in tests / B=1 gen)
+        if should_trigger.shape[0] == 1:
+            return bool(should_trigger.squeeze().item())
         return should_trigger
     
     def compute_entropy(self, logits: torch.Tensor) -> torch.Tensor:
@@ -86,6 +90,8 @@ class PonderGate:
         Returns:
             Entropy value [..., 1]
         """
+        # Stabilize softmax (critical for sharp peaks, e.g. one-hot-like logits)
+        logits = logits - logits.max(dim=-1, keepdim=True).values
         probs = F.softmax(logits, dim=-1)
         log_probs = F.log_softmax(logits, dim=-1)
         entropy = -(probs * log_probs).sum(dim=-1, keepdim=True)
@@ -101,6 +107,7 @@ class PonderGate:
         Returns:
             Max probability [..., 1]
         """
+        logits = logits - logits.max(dim=-1, keepdim=True).values
         probs = F.softmax(logits, dim=-1)
         max_prob = probs.max(dim=-1, keepdim=True).values
         return max_prob

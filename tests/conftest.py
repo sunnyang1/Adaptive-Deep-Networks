@@ -3,6 +3,10 @@ Pytest configuration and shared fixtures for Adaptive Deep Networks tests.
 """
 
 import pytest
+
+# Legacy tests target removed/renamed APIs (TurboQuant V1/V2, old MNNTurboQuant).
+# Run explicitly with: pytest tests/legacy/ -v
+collect_ignore = ["legacy"]
 import torch
 import numpy as np
 from typing import Tuple

@@ -463,6 +463,8 @@ class PolarQTTT(nn.Module):
                 # Reshape for multi-head attention: [B, T, D] -> [B, H, T, d]
                 query_mha = query.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
                 attn_output = compute_attention_with_query(query_mha, kv_cache)
+                # [B, H, T, d] -> [B, T, D] for LM-style projection heads
+                attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, D)
                 
                 # For legacy path, apply projection head to get logits if available
                 if projection_head is not None:

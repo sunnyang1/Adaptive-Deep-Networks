@@ -24,7 +24,7 @@ class TestAdaptiveQTTTConfig:
         assert cfg.max_steps == 16
         assert cfg.base_lr == 0.01
         assert cfg.min_lr == 0.001
-        assert cfg.seq_len_thresholds == [128, 512, 1024]
+        assert cfg.seq_len_thresholds == [4096, 32768]
     
     def test_custom_initialization(self):
         """Test custom config values."""
@@ -44,18 +44,18 @@ class TestAdaptiveQTTTConfig:
         cfg = AdaptiveQTTTConfig(
             base_steps=4,
             max_steps=16,
-            seq_len_thresholds=[128, 512, 1024]
+            seq_len_thresholds=[4096, 32768]
         )
         
         # Short sequence: base steps
-        assert cfg.get_steps_for_seq_len(64) == 4
+        assert cfg.get_steps_for_seq_len(2000) == 4
         
         # Medium sequence: increased steps
-        assert cfg.get_steps_for_seq_len(256) > 4
-        assert cfg.get_steps_for_seq_len(256) <= 16
+        assert cfg.get_steps_for_seq_len(8000) > 4
+        assert cfg.get_steps_for_seq_len(8000) <= 16
         
         # Long sequence: max steps
-        assert cfg.get_steps_for_seq_len(2048) == 16
+        assert cfg.get_steps_for_seq_len(100000) == 16
     
     def test_get_lr_for_gradient_magnitude(self):
         """Test dynamic learning rate based on gradient."""
