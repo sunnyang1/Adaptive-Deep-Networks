@@ -145,6 +145,9 @@ experiments/results/
 # Datasets (large files)
 data/
 datasets/
+# Allow small Python package for needle dataset (not large data files)
+!experiments/real_model/datasets/
+!experiments/real_model/datasets/**
 raw_data/
 processed_data/
 *.tfrecord

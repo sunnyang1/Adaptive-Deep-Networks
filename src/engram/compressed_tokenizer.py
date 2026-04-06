@@ -6,6 +6,7 @@ using Unicode normalization.
 """
 
 import numpy as np
+import torch
 from typing import Union, List
 from transformers import AutoTokenizer
 
@@ -123,10 +124,3 @@ class CompressedTokenizer:
         original_size = len(self.tokenizer)
         compressed_size = self.num_new_tokens
         return original_size / compressed_size
-
-
-# Import torch for type hints
-try:
-    import torch
-except ImportError:
-    torch = None
