@@ -141,8 +141,8 @@ class TargetRateThreshold(DynamicThreshold):
         else:
             current_rate = 0.0
         
-        # Proportional control
-        error = self.target_rate - current_rate
+        # Proportional control: raise threshold if we adapt too often, lower if too rarely
+        error = current_rate - self.target_rate
         new_threshold = self.threshold.item() + self.lr * error
         
         # Ensure threshold stays positive

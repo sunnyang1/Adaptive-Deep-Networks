@@ -7,6 +7,7 @@ existing AdaptiveTransformer architecture.
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Optional, Tuple
 
 from src.models.configs import ModelConfig
@@ -158,7 +159,7 @@ class AdaptiveTransformerWithEngram(AdaptiveTransformer):
         block_representations = [hidden] if use_attnres else []
         partial_block = torch.zeros_like(hidden) if use_attnres else hidden
         
-        # Process layers
+        # Process layers (match AdaptiveTransformer: keep `hidden` as residual stream)
         for layer_idx, (layer, attnres) in enumerate(zip(self.layers, self.attnres_modules)):
             # Check if we need to finalize a block
             if use_attnres and layer_idx > 0 and layer_idx % layers_per_block == 0:
@@ -178,10 +179,21 @@ class AdaptiveTransformerWithEngram(AdaptiveTransformer):
                 layer_kwargs['input_ids'] = input_ids
             
             # Forward through layer
-            partial_block, _ = layer(**layer_kwargs)
+            hidden, partial_block = layer(hidden, **layer_kwargs)
         
-        # Final output
-        hidden = partial_block if use_attnres else hidden
+        # Final AttnRes aggregation (same as AdaptiveTransformer.forward)
+        if use_attnres:
+            all_blocks = block_representations + [partial_block]
+            V = torch.stack(all_blocks, dim=0)
+            attnres = self.attnres_modules[-1]
+            K = attnres.norm_mlp(V)
+            w = attnres.pseudo_query_mlp
+            logits_attn = torch.einsum("d, n b t d -> n b t", w, K)
+            alpha = F.softmax(logits_attn, dim=0)
+            hidden = torch.einsum("n b t, n b t d -> b t d", alpha, V)
+        else:
+            hidden = partial_block
+        
         hidden = self.norm(hidden)
         logits = self.lm_head(hidden)
         
