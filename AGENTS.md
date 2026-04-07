@@ -153,3 +153,34 @@ python experiments/run_experiments_unified.py --category paper
 
 - Paper: Adaptive Deep Networks Final Draft
 - Reference Code: Attention Residuals Technical Report (Chen et al., 2026)
+
+## Cursor Cloud specific instructions
+
+### Environment
+
+- Python 3.12 (system default). No virtual environment needed; packages install to `~/.local`.
+- `~/.local/bin` must be on `PATH` (already persisted in `~/.bashrc`).
+- No Docker, databases, or external services required. This is a pure Python/PyTorch research codebase.
+
+### Quick reference
+
+Commands follow the `Makefile` and `README.md`. Key commands:
+
+| Task | Command |
+|------|---------|
+| Install deps | `pip install -e ".[dev]"` then `pip install tqdm matplotlib seaborn pandas scipy` |
+| Unit tests | `pytest tests/unit/ -v --tb=short` |
+| All tests (skip legacy) | `pytest tests/ -v --tb=short --ignore=tests/legacy` |
+| Lint (black) | `black --check src/ experiments/ scripts/ tests/` |
+| Lint (ruff) | `ruff check src/ experiments/ scripts/ tests/` |
+| Type check | `mypy src/` |
+| List experiments | `python3 experiments/run_experiments_unified.py --list` |
+| Quick experiments | `python3 experiments/run_experiments_unified.py --category core --quick` |
+
+### Known issues (pre-existing)
+
+- `tests/legacy/` contains deprecated tests that fail on import; always pass `--ignore=tests/legacy` to pytest.
+- `mypy` errors with `python_version = "3.8"` in `pyproject.toml` on Python 3.12; mypy requires ≥3.9 target. The error `Source file found twice under different module names` is also pre-existing.
+- 11 unit tests fail due to pre-existing code/test mismatches (gating `DynamicThreshold` API changes, `TwoPhaseBlockAttnRes.norm` missing, `compute_reconstruction_loss` shape bug). These are not environment issues.
+- The unified experiment runner passes `--output-dir` (hyphenated) but individual experiment scripts expect `--output_dir` (underscored), causing exit code 2. Running experiments individually with `--output_dir` works.
+- Use `python3` not `python` (the latter is not linked by default).
