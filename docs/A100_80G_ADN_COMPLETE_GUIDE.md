@@ -8,6 +8,47 @@
 
 ## 📋 准备工作
 
+## ⚡ A100 单卡最稳一键流程（建议先跑）
+
+如果你希望先快速跑通，再看后面的详细说明，可以直接按下面执行：
+
+```bash
+# 0) 进入项目
+cd ~/adaptive-deep-networks
+
+# 1) 激活虚拟环境
+source venv/bin/activate
+
+# 2) 安装项目依赖（首次）
+pip install -e ".[dev]"
+
+# 3) 验证 GPU 与 PyTorch
+python3 -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NO_GPU')"
+
+# 4) 开一个 tmux 会话避免 SSH 断线中断训练
+tmux new-session -s adn-train
+
+# 5) 训练 medium（单卡 A100 推荐）
+python3 scripts/training/train_model.py \
+    --model-size medium \
+    --output-dir results/medium_model \
+    --epochs 3 \
+    --batch-size 4 \
+    --lr 2e-4 \
+    --seq-len 512 \
+    --train-samples 50000 \
+    --val-samples 5000
+
+# 6) 训练后检查结果文件
+python3 -m json.tool results/medium_model/training_results.json | head -80
+```
+
+如果你更关注论文对齐而不是快速跑通，直接用：
+
+```bash
+make train-paper-medium OUTPUT_DIR=results/medium_paper
+```
+
 ### 1.1 你需要什么
 
 | 项目 | 要求 | 说明 |
@@ -190,7 +231,7 @@ data/                          tasks/
 
 ---
 
-## 🏋️ 第二步：训练模型
+## 🏋️ 第二步：训练模型（已更新为统一入口）
 
 ### 3.1 了解模型大小
 
@@ -220,7 +261,7 @@ tmux new-session -s training
 - `Ctrl+b 然后按 %`：垂直分屏
 - `Ctrl+b 然后按 "`：水平分屏
 
-### 3.3 开始训练 Medium 模型
+### 3.3 开始训练 Medium 模型（推荐）
 
 在 tmux 会话中执行：
 
@@ -234,8 +275,9 @@ source venv/bin/activate
 # 3. 创建结果目录
 mkdir -p results/medium_model
 
-# 4. 开始训练！
-python scripts/training/train_medium.py \
+# 4. 开始训练（统一入口）
+python3 scripts/training/train_model.py \
+    --model-size medium \
     --output-dir results/medium_model \
     --epochs 3 \
     --batch-size 4 \
@@ -248,6 +290,7 @@ python scripts/training/train_medium.py \
 **参数解释：**
 | 参数 | 值 | 说明 |
 |------|-----|------|
+| `--model-size medium` | 中等模型 | 单卡 A100 80GB 推荐 |
 | `--epochs 3` | 训练 3 轮 | 完整遍历数据集 3 次 |
 | `--batch-size 4` | 批次大小 4 | 根据显存调整，A100 80G 可设 4-8 |
 | `--lr 2e-4` | 学习率 0.0002 | 控制参数更新速度 |
@@ -312,28 +355,23 @@ cat results/medium_model/training.log
 tail -f results/medium_model/training.log
 ```
 
-### 3.5 训练完成后的文件
+### 3.5 训练完成后的文件（当前版本）
 
-训练完成后，`results/medium_model/` 目录下会有：
+训练完成后，`results/medium_model/` 目录下会有（以当前脚本实现为准）：
 
 ```
 results/medium_model/
-├── checkpoint-final/           # 最终模型
-│   ├── pytorch_model.bin      # 模型权重（~11GB）
-│   ├── config.json            # 模型配置
-│   └── training_args.bin      # 训练参数
-├── checkpoint-epoch-1/         # 第1轮检查点
-├── checkpoint-epoch-2/         # 第2轮检查点
-├── training.log                # 训练日志
-├── metrics.json                # 训练指标
-└── loss_plot.png               # 损失曲线图
+├── checkpoints/                # 按 epoch/step 保存的检查点
+│   ├── checkpoint_epoch_*.pt
+│   └── best.pt (如果产生)
+└── training_results.json       # 训练历史 + paper_alignment 检查结果
 ```
 
 ---
 
 ## 🧠 第三步：模型推理（使用训练好的模型）
 
-### 4.1 快速测试模型
+### 4.1 快速测试模型（前向推理 smoke test）
 
 创建一个测试脚本：
 
@@ -342,17 +380,18 @@ results/medium_model/
 cat > test_model.py << 'EOF'
 import torch
 import sys
-sys.path.insert(0, 'src')
+sys.path.insert(0, '.')
 
-from models.adaptive_transformer import create_adaptive_transformer
+from src.models.adaptive_transformer import AdaptiveTransformer
 from src.models.configs import AttnResMediumConfig
 
 print("加载模型...")
 config = AttnResMediumConfig()
-model = create_adaptive_transformer(config)
+model = AdaptiveTransformer(config)
 
-# 如果有训练好的检查点，加载它
-# model.load_state_dict(torch.load('results/medium_model/checkpoint-final/pytorch_model.bin'))
+# 可选：加载训练好的检查点（按你的实际文件名修改）
+# ckpt = torch.load("results/medium_model/checkpoints/checkpoint_epoch_1.pt", map_location="cpu")
+# model.load_state_dict(ckpt["model_state_dict"], strict=False)
 
 model = model.cuda().eval()
 print(f"模型参数量: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B")
@@ -379,7 +418,7 @@ python test_model.py
 mkdir -p results/benchmarks
 
 # 运行所有基准测试
-python scripts/evaluation/run_benchmarks.py \
+python3 scripts/evaluation/run_benchmarks.py \
     --model-size medium \
     --benchmarks all \
     --output-dir results/benchmarks \
@@ -400,7 +439,7 @@ python scripts/evaluation/run_benchmarks.py \
 **Needle-in-Haystack 测试（长文本检索能力）：**
 ```bash
 # 单独运行 needle 测试
-python scripts/evaluation/run_benchmarks.py \
+python3 scripts/evaluation/run_benchmarks.py \
     --model-size medium \
     --benchmarks needle \
     --output-dir results/needle_test \
@@ -436,7 +475,7 @@ try:
     model.load_state_dict(checkpoint)
     print("✅ 已加载训练好的权重")
 except:
-    print("⚠️ 使用随机初始化的权重（请先用 train_medium.py 训练）")
+    print("⚠️ 使用随机初始化的权重（请先用 train_model.py 训练）")
 
 model = model.cuda().eval()
 
@@ -479,7 +518,8 @@ DeepSpeed 可以更高效地利用显存，支持更大的 batch size。
 pip install deepspeed==0.12.0
 
 # 使用 DeepSpeed 训练
-deepspeed --num_gpus=1 scripts/training/train_medium.py \
+deepspeed --num_gpus=1 scripts/training/train_model.py \
+    --model-size medium \
     --output-dir results/medium_ds \
     --epochs 3 \
     --batch-size 8 \
@@ -490,27 +530,41 @@ deepspeed --num_gpus=1 scripts/training/train_medium.py \
 
 ```bash
 # 4 卡并行训练
-torchrun --nproc_per_node=4 scripts/training/train_medium.py \
+torchrun --nproc_per_node=4 scripts/training/train_model.py \
+    --model-size medium \
     --output-dir results/medium_4gpu \
     --epochs 3 \
     --batch-size 2 \
     --distributed
 ```
 
-### 5.3 恢复中断的训练
+### 5.3 Paper 对齐训练（推荐）
+
+```bash
+# 小模型（严格 paper_alignment 校验）
+make train-paper-small OUTPUT_DIR=results/small_paper
+
+# 中模型
+make train-paper-medium OUTPUT_DIR=results/medium_paper
+
+# 大模型
+make train-paper-large OUTPUT_DIR=results/large_paper
+```
+
+### 5.4 恢复中断的训练
 
 如果训练中断，可以从检查点恢复：
 
 ```bash
 # 找到最新的检查点
-ls -lt results/medium_model/checkpoint-* | head -5
+ls -lt results/medium_model/checkpoints/ | head -20
 
-# 修改训练脚本中的恢复逻辑（需要编辑 train_medium.py）
-# 或手动指定检查点路径
-python scripts/training/train_medium.py \
+# 通过统一入口继续训练
+python3 scripts/training/train_model.py \
+    --model-size medium \
     --output-dir results/medium_model \
     --epochs 3 \
-    --resume-from results/medium_model/checkpoint-epoch-1
+    --resume results/medium_model/checkpoints/checkpoint_epoch_1.pt
 ```
 
 ---
@@ -527,12 +581,13 @@ RuntimeError: CUDA out of memory. Tried to allocate X.XX GiB
 **解决：**
 ```bash
 # 减小 batch size
-python scripts/training/train_medium.py --batch-size 2  # 甚至 1
+python3 scripts/training/train_model.py --model-size medium --batch-size 2  # 甚至 1
 
 # 或使用梯度累积（保持有效 batch size 不变）
-python scripts/training/train_medium.py \
+python3 scripts/training/train_model.py \
+    --model-size medium \
     --batch-size 1 \
-    --gradient-accumulation-steps 4  # 实际 batch = 1 * 4 = 4
+    --grad-accum 4  # 实际 batch = 1 * 4 = 4
 ```
 
 ### 问题 2：训练速度很慢
@@ -543,8 +598,8 @@ python scripts/training/train_medium.py \
 watch -n 1 nvidia-smi
 
 # 如果 GPU 利用率 < 50%，可能是数据加载瓶颈
-# 尝试增加 num_workers
-python scripts/training/train_medium.py --num-workers 4
+# 数据加载相关参数在当前训练入口未暴露 num_workers，可先降低 seq_len/batch-size 稳定吞吐
+python3 scripts/training/train_model.py --model-size medium --batch-size 2 --seq-len 384
 ```
 
 ### 问题 3：SSH 断开，训练中断
@@ -555,7 +610,7 @@ python scripts/training/train_medium.py --num-workers 4
 tmux new -s my_training
 
 # 在会话中运行训练
-python scripts/training/train_medium.py ...
+python3 scripts/training/train_model.py --model-size medium ...
 
 # 按 Ctrl+b，然后按 d 分离会话
 
@@ -689,7 +744,7 @@ du -sh results/*
 
 如果遇到问题：
 
-1. 查看错误日志：`cat results/medium_model/training.log`
+1. 查看训练结果：`cat results/medium_model/training_results.json`
 2. 检查 GPU 状态：`nvidia-smi`
 3. 查看项目文档：`docs/`
 4. 在 GitHub 上提交 Issue
@@ -698,4 +753,4 @@ du -sh results/*
 
 **祝训练顺利！🎉**
 
-*最后更新: 2026-04-05*
+*最后更新: 2026-04-07*

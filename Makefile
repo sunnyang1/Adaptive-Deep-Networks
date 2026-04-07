@@ -31,10 +31,10 @@ install:
 
 # Testing
 test:
-	pytest tests/ -v
+	pytest tests/ -v --tb=short --ignore=tests/legacy
 
 test-cov:
-	pytest tests/ -v --cov=src --cov-report=html --cov-report=term
+	pytest tests/ -v --tb=short --ignore=tests/legacy --cov=src --cov-report=html --cov-report=term
 
 # Linting and formatting
 lint:
@@ -56,23 +56,23 @@ clean:
 
 # Experiment targets
 quick:
-	python experiments/run_experiments_unified.py --all --quick
+	python3 experiments/run_experiments_unified.py --all --quick
 
 full:
-	python experiments/run_experiments_unified.py --all
+	python3 experiments/run_experiments_unified.py --all
 
 core:
-	python experiments/run_experiments_unified.py --category core
+	python3 experiments/run_experiments_unified.py --category core
 
 validate:
-	python experiments/run_experiments_unified.py --category validation
+	python3 experiments/run_experiments_unified.py --category validation
 
 paper-metrics:
-	python experiments/run_experiments_unified.py --category paper
+	python3 experiments/run_experiments_unified.py --category paper
 
 # List experiments
 list:
-	python experiments/run_experiments_unified.py --list
+	python3 experiments/run_experiments_unified.py --list
 
 # Paper-aligned training wrappers (requires OUTPUT_DIR)
 train-paper-small:
