@@ -31,18 +31,19 @@
 
 **整理仓库时勿将 `ADN_paper.md`、`matdo-e_paper.md` 移入 `docs/` 或其他子目录**（固定在根目录，便于投稿与版本对照）。
 
-| 文件                        | 说明                                                                 |
-| ------------------------- | ------------------------------------------------------------------ |
-| `ADN_paper.md`            | **投稿稿**：ADN 主论文（Markdown）。保留在根目录。                                      |
-| `matdo-e_paper.md`        | **投稿稿**：MATDO-E 论文（Markdown）。保留在根目录。                                    |
-| `README.md`               | 项目主文档，包含快速开始指南、安装说明、训练和评估命令                                             |
-| `AGENTS.md`               | AI Agent 开发指南，包含架构设计决策和实现细节                                           |
-| `PROJECT_ORGANIZATION.md` | 本文件，项目结构和文件说明                                                            |
-| `LICENSE`                 | Apache 2.0 许可证                                                   |
-| `Makefile`                | 构建脚本，包含格式化、测试、清理等命令                                                      |
-| `pyproject.toml`          | Python 项目配置，包含依赖和工具配置                                                   |
-| `requirements.txt`        | Python 依赖列表                                                     |
-| `.gitignore`              | Git 忽略规则                                                        |
+
+| 文件                        | 说明                                   |
+| ------------------------- | ------------------------------------ |
+| `ADN_paper.md`            | **投稿稿**：ADN 主论文（Markdown）。保留在根目录。    |
+| `matdo-e_paper.md`        | **投稿稿**：MATDO-E 论文（Markdown）。保留在根目录。 |
+| `README.md`               | 项目主文档，包含快速开始指南、安装说明、训练和评估命令          |
+| `AGENTS.md`               | AI Agent 开发指南，包含架构设计决策和实现细节          |
+| `PROJECT_ORGANIZATION.md` | 本文件，项目结构和文件说明                        |
+| `LICENSE`                 | Apache 2.0 许可证                       |
+| `Makefile`                | 构建脚本，包含格式化、测试、清理等命令                  |
+| `pyproject.toml`          | Python 项目配置，包含依赖和工具配置                |
+| `requirements.txt`        | Python 依赖列表                          |
+| `.gitignore`              | Git 忽略规则                             |
 
 
 ### 归档目录 (`archive/`)
@@ -1020,11 +1021,11 @@ WorkBuddy AI 助手配置：
 ## 整理前后对比
 
 
-| 指标                | 整理前（约 2026-04）        | 整理后（当前约定）                                 | 说明                          |
-| ----------------- | --------------------- | ----------------------------------------- | --------------------------- |
-| 根目录零散 Markdown/论文 | 多份在根目录                | 大部分迁入 `docs/papers/`、`docs/guides/`         | **例外**：`ADN_paper.md`、`matdo-e_paper.md` 为投稿稿，始终保留在根目录 |
-| 任务 PRD            | 部分在子目录                | Engram 等并入 `tasks/` 与 `docs/project/prd/` | 见「文件移动记录」                   |
-| 参考 PDF 路径         | `related paper/`（含空格） | `related_papers/`                         | 本地文件夹；PDF 通常不提交             |
+| 指标                | 整理前（约 2026-04）        | 整理后（当前约定）                                 | 说明                                                     |
+| ----------------- | --------------------- | ----------------------------------------- | ------------------------------------------------------ |
+| 根目录零散 Markdown/论文 | 多份在根目录                | 大部分迁入 `docs/papers/`、`docs/guides/`       | **例外**：`ADN_paper.md`、`matdo-e_paper.md` 为投稿稿，始终保留在根目录 |
+| 任务 PRD            | 部分在子目录                | Engram 等并入 `tasks/` 与 `docs/project/prd/` | 见「文件移动记录」                                              |
+| 参考 PDF 路径         | `related paper/`（含空格） | `related_papers/`                         | 本地文件夹；PDF 通常不提交                                        |
 
 
 ---
