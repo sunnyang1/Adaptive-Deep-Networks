@@ -33,7 +33,7 @@ from src.engram.config import EngramSmallConfig, EngramMediumConfig, EngramLarge
 from scripts.common.training import CheckpointManager, compute_loss, train_step, get_scheduler
 from scripts.common.distributed import setup_distributed, cleanup_distributed, is_main_process
 from scripts.common.data import HuggingFaceDataset, get_dataloader
-from src.models.tokenizer import create_tokenizer, get_tokenizer_for_model
+from src.models.tokenizer import create_tokenizer, get_tokenizer_for_model, TokenizerWrapper
 
 
 class BaseTrainer(ABC):
@@ -43,6 +43,7 @@ class BaseTrainer(ABC):
         self.args = args
         self._apply_paper_preset_args()
         self.config = self._get_model_config()
+        self._align_vocab_size_with_tokenizer()
         self._apply_paper_component_flags()
         self.device = self._setup_device()
         self.model = None
@@ -58,6 +59,21 @@ class BaseTrainer(ABC):
         self.best_loss = float('inf')
         self.history = {'train_loss': [], 'val_loss': []}
         self.model_forward_kwargs: Dict[str, Any] = {}
+
+    def _align_vocab_size_with_tokenizer(self):
+        """Prevent embedding/token index mismatch between model and tokenizer."""
+        tokenizer_name = self.args.tokenizer_name or get_tokenizer_for_model(self.get_model_size_name())
+        tokenizer_vocab = TokenizerWrapper.VOCAB_SIZES.get(tokenizer_name)
+        if tokenizer_vocab is None:
+            return
+
+        if self.config.vocab_size < tokenizer_vocab:
+            old_vocab = self.config.vocab_size
+            self.config.vocab_size = tokenizer_vocab
+            print(
+                f"Adjusted model vocab_size from {old_vocab} to {tokenizer_vocab} "
+                f"to match tokenizer '{tokenizer_name}'."
+            )
 
     def _apply_paper_preset_args(self):
         """Apply one-shot paper preset hyperparameters/components to args."""
