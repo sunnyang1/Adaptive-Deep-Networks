@@ -18,7 +18,8 @@ Usage:
   bash scripts/training/run_with_paper_alignment_check.sh [options] [-- <extra training args>]
 
 Options:
-  --model-size SIZE   small|medium|large (default: medium)
+  --model-size SIZE   t4|small|medium|large (default: medium)
+                      (t4 uses --paper-preset-t4: same paper hyperparams + T4 VRAM caps)
   --output-dir PATH   required output directory
   -h, --help          show this help
 
@@ -55,10 +56,15 @@ if [[ ! -f "$TRAIN_SCRIPT" ]]; then
   exit 1
 fi
 
-echo "Running $TRAIN_SCRIPT with paper preset..."
+PRESET_FLAG=(--paper-preset)
+if [[ "$MODEL_SIZE" == "t4" ]]; then
+  PRESET_FLAG=(--paper-preset-t4)
+fi
+
+echo "Running $TRAIN_SCRIPT with paper preset (${PRESET_FLAG[*]})..."
 python3 "$TRAIN_SCRIPT" \
   --output-dir "$OUTPUT_DIR" \
-  --paper-preset \
+  "${PRESET_FLAG[@]}" \
   --deterministic \
   "${EXTRA_ARGS[@]}"
 

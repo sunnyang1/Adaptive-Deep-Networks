@@ -68,6 +68,24 @@ class AttnResSmallConfig(ModelConfig):
 
 
 @dataclass
+class AttnResT4Config(ModelConfig):
+    """T4-friendly configuration (~125M params with GPT-2 vocab).
+
+    This config is intended for smoke/integration training on 15GB GPUs.
+    Aligned to §5.4.1 style ratios as closely as possible under T4 constraints:
+    - d_model/L_b = 640/14 = 45.7 (near optimal ~45)
+    - H/L_b = 4/14 = 0.286 (near optimal ~0.3)
+    """
+
+    num_layers: int = 14
+    hidden_dim: int = 640
+    num_heads: int = 4
+    num_blocks: int = 7
+    max_qttt_steps: int = 8
+    qttt_span_length: int = 64
+
+
+@dataclass
 class AttnResMediumConfig(ModelConfig):
     """5.7B parameter model (AttnRes-M).
     
@@ -160,6 +178,7 @@ class ValidationConfig:
 
 # Registry of configurations
 CONFIGS = {
+    "t4": AttnResT4Config,
     "small": AttnResSmallConfig,
     "medium": AttnResMediumConfig,
     "large": AttnResLargeConfig,

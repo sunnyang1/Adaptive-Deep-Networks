@@ -239,6 +239,7 @@ def get_tokenizer_for_model(model_name: str) -> str:
         'gpt2': 'gpt2',
         'llama2': 'meta-llama/Llama-2-7b-hf',
         'llama3': 'meta-llama/Meta-Llama-3-8B',
+        't4': 'gpt2',
         'small': 'gpt2',  # Default for small model
         'medium': 'meta-llama/Llama-2-7b-hf',  # Recommend Llama-2 for medium+
         'large': 'meta-llama/Llama-2-7b-hf',

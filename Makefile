@@ -17,6 +17,7 @@ help:
 	@echo "  make core          - Run core experiments"
 	@echo "  make validate      - Run validation experiments"
 	@echo "  make train-paper-small  - Train small model + strict paper alignment check"
+	@echo "  make train-paper-t4     - Train T4 model + paper preset (T4 VRAM caps) + alignment check"
 	@echo "  make train-paper-medium - Train medium model + strict paper alignment check"
 	@echo "  make train-paper-large  - Train large model + strict paper alignment check"
 	@echo ""
@@ -74,6 +75,10 @@ list:
 train-paper-small:
 	@if [ -z "$(OUTPUT_DIR)" ]; then echo "Usage: make train-paper-small OUTPUT_DIR=results/small_paper"; exit 1; fi
 	bash scripts/training/run_with_paper_alignment_check.sh --model-size small --output-dir "$(OUTPUT_DIR)"
+
+train-paper-t4:
+	@if [ -z "$(OUTPUT_DIR)" ]; then echo "Usage: make train-paper-t4 OUTPUT_DIR=results/t4_paper"; exit 1; fi
+	bash scripts/training/run_with_paper_alignment_check.sh --model-size t4 --output-dir "$(OUTPUT_DIR)"
 
 train-paper-medium:
 	@if [ -z "$(OUTPUT_DIR)" ]; then echo "Usage: make train-paper-medium OUTPUT_DIR=results/medium_paper"; exit 1; fi

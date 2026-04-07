@@ -38,11 +38,13 @@ def main() -> None:
     expected = pa.get("expected", {})
     actual = pa.get("actual", {})
     preset = bool(pa.get("paper_preset_enabled", False))
+    preset_t4 = bool(pa.get("paper_preset_t4_enabled", False))
 
     print("Paper Alignment Check")
     print("=" * 60)
     print(f"results: {path}")
     print(f"paper_preset_enabled: {preset}")
+    print(f"paper_preset_t4_enabled: {preset_t4}")
     print(f"is_aligned: {is_aligned}")
     print("-" * 60)
 

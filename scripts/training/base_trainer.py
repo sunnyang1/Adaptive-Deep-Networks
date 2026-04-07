@@ -77,20 +77,37 @@ class BaseTrainer(ABC):
 
     def _apply_paper_preset_args(self):
         """Apply one-shot paper preset hyperparameters/components to args."""
-        if not getattr(self.args, "paper_preset", False):
+        paper = getattr(self.args, "paper_preset", False)
+        t4_preset = getattr(self.args, "paper_preset_t4", False)
+        if not paper and not t4_preset:
             return
+        if t4_preset:
+            # Implies full paper preset; keeps strict alignment checks working.
+            self.args.paper_preset = True
         self.args.warmup_steps = 2000
         self.args.weight_decay = 0.1
         self.args.seed = 42
         self.args.use_engram = True
         self.args.use_rabitq = True
         self.args.rabitq_bits = 1
+        if t4_preset:
+            # T4 15GB: keep paper hyperparams but cap activation/memory-heavy settings.
+            self.args.seq_len = 128
+            self.args.batch_size = 1
+            self.args.grad_accum = 1
+            self.args.train_samples = 2048
+            self.args.val_samples = 256
+            print(
+                "Paper preset (T4): seq_len=128, batch_size=1, grad_accum=1, "
+                "train_samples=2048, val_samples=256"
+            )
 
     def _apply_paper_component_flags(self):
         """Apply paper-aligned component toggles to model config."""
         if getattr(self.args, "use_engram", False):
             size = self.get_model_size_name().lower()
             engram_cfg = {
+                "t4": EngramSmallConfig,
                 "small": EngramSmallConfig,
                 "medium": EngramMediumConfig,
                 "large": EngramLargeConfig,
@@ -470,6 +487,7 @@ class BaseTrainer(ABC):
             'total_steps': self.global_step,
             'paper_alignment': {
                 'paper_preset_enabled': bool(getattr(self.args, "paper_preset", False)),
+                'paper_preset_t4_enabled': bool(getattr(self.args, "paper_preset_t4", False)),
                 'expected': expected,
                 'actual': actual,
                 'checks': checks,
@@ -521,6 +539,11 @@ def get_common_parser() -> argparse.ArgumentParser:
                        help='RaBitQ bit-width when --use-rabitq is enabled')
     parser.add_argument('--paper-preset', action='store_true',
                        help='Apply one-shot paper preset hyperparameters/components')
+    parser.add_argument(
+        '--paper-preset-t4',
+        action='store_true',
+        help='Same as --paper-preset plus T4-friendly seq_len/batch/sample caps (15GB GPUs)',
+    )
     
     # Dataset configuration
     parser.add_argument('--dataset-name', type=str, default='openwebtext',
