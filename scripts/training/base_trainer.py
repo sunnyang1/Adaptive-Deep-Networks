@@ -10,6 +10,8 @@ import sys
 import json
 import time
 import argparse
+import random
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, Any, Tuple
@@ -17,6 +19,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
+import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -25,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.models.configs import ModelConfig, AttnResSmallConfig, AttnResMediumConfig, AttnResLargeConfig
 from src.models.adaptive_transformer import AdaptiveTransformer
+from src.engram.integration import add_engram_to_config
+from src.engram.config import EngramSmallConfig, EngramMediumConfig, EngramLargeConfig
 from scripts.common.training import CheckpointManager, compute_loss, train_step, get_scheduler
 from scripts.common.distributed import setup_distributed, cleanup_distributed, is_main_process
 from scripts.common.data import HuggingFaceDataset, get_dataloader
@@ -36,7 +41,9 @@ class BaseTrainer(ABC):
     
     def __init__(self, args: argparse.Namespace):
         self.args = args
+        self._apply_paper_preset_args()
         self.config = self._get_model_config()
+        self._apply_paper_component_flags()
         self.device = self._setup_device()
         self.model = None
         self.optimizer = None
@@ -50,6 +57,52 @@ class BaseTrainer(ABC):
         self.global_step = 0
         self.best_loss = float('inf')
         self.history = {'train_loss': [], 'val_loss': []}
+        self.model_forward_kwargs: Dict[str, Any] = {}
+
+    def _apply_paper_preset_args(self):
+        """Apply one-shot paper preset hyperparameters/components to args."""
+        if not getattr(self.args, "paper_preset", False):
+            return
+        self.args.warmup_steps = 2000
+        self.args.weight_decay = 0.1
+        self.args.seed = 42
+        self.args.use_engram = True
+        self.args.use_rabitq = True
+        self.args.rabitq_bits = 1
+
+    def _apply_paper_component_flags(self):
+        """Apply paper-aligned component toggles to model config."""
+        if getattr(self.args, "use_engram", False):
+            size = self.get_model_size_name().lower()
+            engram_cfg = {
+                "small": EngramSmallConfig,
+                "medium": EngramMediumConfig,
+                "large": EngramLargeConfig,
+            }.get(size, EngramMediumConfig)
+            self.config = add_engram_to_config(self.config, engram_cfg)
+
+    def _get_model_forward_kwargs(self) -> Dict[str, Any]:
+        """Build kwargs passed to model.forward during train/val."""
+        kwargs: Dict[str, Any] = {
+            "use_attnres": True,
+            "use_engram": bool(getattr(self.args, "use_engram", False)),
+        }
+        if getattr(self.args, "use_rabitq", False):
+            kwargs["use_rabitq"] = True
+            kwargs["rabitq_caches"] = getattr(self.model, "rabitq_caches", None)
+        return kwargs
+
+    def _set_random_seed(self):
+        """Set random seed for reproducibility."""
+        seed = int(self.args.seed)
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        if getattr(self.args, "deterministic", False):
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
         
     @abstractmethod
     def _get_model_config(self) -> ModelConfig:
@@ -74,6 +127,7 @@ class BaseTrainer(ABC):
     
     def setup(self):
         """Initialize training components."""
+        self._set_random_seed()
         print(f"\n{'='*70}")
         print(f"Setting up {self.get_model_size_name().upper()} model training")
         print(f"{'='*70}")
@@ -84,6 +138,10 @@ class BaseTrainer(ABC):
         print(f"  Hidden dim: {self.config.hidden_dim}")
         print(f"  Num heads: {self.config.num_heads}")
         print(f"  Num blocks (AttnRes): {self.config.num_blocks}")
+        print(f"  Engram enabled: {getattr(self.config, 'use_engram', False)}")
+        print(f"  RaBitQ enabled: {getattr(self.args, 'use_rabitq', False)}")
+        print(f"  RaBitQ bits: {self.args.rabitq_bits if getattr(self.args, 'use_rabitq', False) else 'N/A'}")
+        print(f"  Max qTTT steps: {self.config.max_qttt_steps}")
         
         # Create model
         print(f"\nBuilding model...")
@@ -97,6 +155,11 @@ class BaseTrainer(ABC):
         
         # Move to device
         self.model = self.model.to(self.device)
+        
+        # Optional RaBitQ initialization (for forward path used by train/val).
+        if getattr(self.args, "use_rabitq", False) and hasattr(self.model, "init_rabitq_caches"):
+            self.model.init_rabitq_caches(total_bits=int(self.args.rabitq_bits), residual_window=128)
+        self.model_forward_kwargs = self._get_model_forward_kwargs()
         
         # Setup optimizer
         self.optimizer = torch.optim.AdamW(
@@ -136,6 +199,8 @@ class BaseTrainer(ABC):
         print(f"  Gradient accumulation: {self.args.grad_accum}")
         print(f"  Device: {self.device}")
         print(f"  Output dir: {self.args.output_dir}")
+        print(f"  Seed: {self.args.seed}")
+        print(f"  Deterministic: {self.args.deterministic}")
     
     def _setup_data(self):
         """Setup training and validation data loaders using HuggingFace datasets."""
@@ -211,13 +276,15 @@ class BaseTrainer(ABC):
         
         pbar = tqdm(self.train_loader, desc=f"Epoch {self.current_epoch}")
         for batch in pbar:
+            num_batches += 1
             loss = train_step(
                 model=self.model,
                 batch=batch,
                 optimizer=self.optimizer,
                 criterion=self.criterion,
                 device=self.device,
-                gradient_accumulation_steps=self.args.grad_accum
+                gradient_accumulation_steps=self.args.grad_accum,
+                model_forward_kwargs=self.model_forward_kwargs,
             )
             
             accumulated_steps += 1
@@ -263,7 +330,8 @@ class BaseTrainer(ABC):
                     model=self.model,
                     batch=batch,
                     criterion=self.criterion,
-                    device=self.device
+                    device=self.device,
+                    model_forward_kwargs=self.model_forward_kwargs,
                 )
                 total_loss += loss.item()
                 num_batches += 1
@@ -340,13 +408,57 @@ class BaseTrainer(ABC):
     
     def _save_results(self):
         """Save training results."""
+        def _safe(obj):
+            if is_dataclass(obj):
+                return asdict(obj)
+            if isinstance(obj, dict):
+                return {k: _safe(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_safe(x) for x in obj]
+            return obj
+
+        expected = {
+            "warmup_steps": 2000,
+            "weight_decay": 0.1,
+            "seed": 42,
+            "use_rabitq": True,
+            "rabitq_bits": 1,
+            "use_engram": True,
+            "use_attnres": True,
+        }
+        actual = {
+            "warmup_steps": self.args.warmup_steps,
+            "weight_decay": self.args.weight_decay,
+            "seed": self.args.seed,
+            "use_rabitq": bool(getattr(self.args, "use_rabitq", False)),
+            "rabitq_bits": int(self.args.rabitq_bits) if getattr(self.args, "use_rabitq", False) else None,
+            "use_engram": bool(getattr(self.args, "use_engram", False)),
+            "use_attnres": True,
+        }
+        checks = {
+            "warmup_steps": actual["warmup_steps"] == expected["warmup_steps"],
+            "weight_decay": abs(actual["weight_decay"] - expected["weight_decay"]) < 1e-12,
+            "seed": actual["seed"] == expected["seed"],
+            "use_rabitq": actual["use_rabitq"] == expected["use_rabitq"],
+            "rabitq_bits": (actual["rabitq_bits"] == expected["rabitq_bits"]) if actual["use_rabitq"] else False,
+            "use_engram": actual["use_engram"] == expected["use_engram"],
+            "use_attnres": actual["use_attnres"] == expected["use_attnres"],
+        }
+
         results = {
             'model_size': self.get_model_size_name(),
-            'config': self.config.__dict__,
+            'config': _safe(self.config),
             'training_args': vars(self.args),
             'history': self.history,
             'best_loss': self.best_loss,
             'total_steps': self.global_step,
+            'paper_alignment': {
+                'paper_preset_enabled': bool(getattr(self.args, "paper_preset", False)),
+                'expected': expected,
+                'actual': actual,
+                'checks': checks,
+                'is_aligned': all(checks.values()),
+            },
         }
         
         output_file = Path(self.args.output_dir) / 'training_results.json'
@@ -367,7 +479,7 @@ def get_common_parser() -> argparse.ArgumentParser:
     parser.add_argument('--batch-size', type=int, default=4, help='Batch size')
     parser.add_argument('--lr', type=float, default=3e-4, help='Learning rate')
     parser.add_argument('--weight-decay', type=float, default=0.1, help='Weight decay')
-    parser.add_argument('--warmup-steps', type=int, default=100, help='Warmup steps')
+    parser.add_argument('--warmup-steps', type=int, default=2000, help='Warmup steps')
     parser.add_argument('--grad-accum', type=int, default=1, help='Gradient accumulation')
     parser.add_argument('--max-checkpoints', type=int, default=3, help='Max checkpoints to keep')
     
@@ -383,7 +495,16 @@ def get_common_parser() -> argparse.ArgumentParser:
     # Execution
     parser.add_argument('--device', type=str, default='auto', help='Device (auto/cuda/cpu)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    parser.add_argument('--deterministic', action='store_true', help='Enable deterministic mode for reproducibility')
     parser.add_argument('--log-interval', type=int, default=10, help='Logging interval')
+
+    # Paper component toggles
+    parser.add_argument('--use-engram', action='store_true', help='Enable Engram in training model config')
+    parser.add_argument('--use-rabitq', action='store_true', help='Enable RaBitQ cache path in train/val forward')
+    parser.add_argument('--rabitq-bits', type=int, default=1, choices=[1, 2, 3],
+                       help='RaBitQ bit-width when --use-rabitq is enabled')
+    parser.add_argument('--paper-preset', action='store_true',
+                       help='Apply one-shot paper preset hyperparameters/components')
     
     # Dataset configuration
     parser.add_argument('--dataset-name', type=str, default='openwebtext',

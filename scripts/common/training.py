@@ -153,7 +153,8 @@ def compute_loss(
     model: nn.Module,
     batch: Dict[str, torch.Tensor],
     criterion: nn.Module,
-    device: torch.device
+    device: torch.device,
+    model_forward_kwargs: Optional[Dict[str, Any]] = None,
 ) -> torch.Tensor:
     """
     Compute loss for a batch.
@@ -170,7 +171,8 @@ def compute_loss(
     input_ids = batch['input_ids'].to(device)
     labels = batch['labels'].to(device)
     
-    outputs = model(input_ids)
+    forward_kwargs = model_forward_kwargs or {}
+    outputs = model(input_ids, **forward_kwargs)
     
     # Handle different output formats
     if hasattr(outputs, 'logits'):
@@ -190,7 +192,8 @@ def train_step(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
-    gradient_accumulation_steps: int = 1
+    gradient_accumulation_steps: int = 1,
+    model_forward_kwargs: Optional[Dict[str, Any]] = None,
 ) -> float:
     """
     Single training step.
@@ -206,7 +209,13 @@ def train_step(
     Returns:
         Loss value
     """
-    loss = compute_loss(model, batch, criterion, device)
+    loss = compute_loss(
+        model,
+        batch,
+        criterion,
+        device,
+        model_forward_kwargs=model_forward_kwargs,
+    )
     
     # Scale loss for gradient accumulation
     if gradient_accumulation_steps > 1:

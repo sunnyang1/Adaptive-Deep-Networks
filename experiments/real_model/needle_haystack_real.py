@@ -41,7 +41,8 @@ class NeedleHaystackValidator:
         self,
         model: torch.nn.Module,
         device: str = 'cuda',
-        tokenizer=None
+        tokenizer=None,
+        generate_kwargs: Optional[Dict] = None,
     ):
         """
         Args:
@@ -52,6 +53,7 @@ class NeedleHaystackValidator:
         self.model = model
         self.device = device
         self.tokenizer = tokenizer
+        self.generate_kwargs = generate_kwargs or {}
         self.dataset = NeedleDataset(seed=42)
     
     def _tokenize(self, text: str) -> List[int]:
@@ -87,7 +89,8 @@ class NeedleHaystackValidator:
                 output_ids = self.model.generate(
                     input_ids,
                     max_new_tokens=max_new_tokens,
-                    do_sample=False  # greedy
+                    do_sample=False,  # greedy
+                    **self.generate_kwargs,
                 )
                 # 解码输出
                 output_text = self._decode(output_ids[0, input_ids.shape[1]:])

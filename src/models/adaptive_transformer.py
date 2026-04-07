@@ -14,6 +14,7 @@ from src.models.configs import ModelConfig
 from src.attnres.block_attnres import BlockAttnRes, TwoPhaseBlockAttnRes, RMSNorm
 from src.qttt.adaptation import KVCache
 from src.qttt.polar_adaptation import PolarQTTT, PolarQTTTConfig
+from src.engram.engram_module import Engram
 
 
 def get_device():
@@ -133,6 +134,17 @@ class AdaptiveLayer(nn.Module):
         
         self.attn = AdaptiveAttention(config)
         self.mlp = AdaptiveMLP(config)
+
+        # Optional Engram injection per layer.
+        self.engram = None
+        if config.use_engram and config.engram_config:
+            if layer_idx in config.engram_config.layer_ids:
+                self.engram = Engram(
+                    layer_id=layer_idx,
+                    config=config.engram_config,
+                    hidden_size=config.hidden_dim,
+                    hc_mult=1,
+                )
     
     def forward(
         self,
@@ -141,11 +153,13 @@ class AdaptiveLayer(nn.Module):
         partial_block: Optional[torch.Tensor] = None,
         attnres_module: Optional[BlockAttnRes] = None,
         use_attnres: bool = True,
+        use_engram: bool = True,
         use_qttt: bool = False,
         kv_cache: Optional[KVCache] = None,
         adapted_query: Optional[torch.Tensor] = None,
         rabitq_cache = None,
         rabitq_kv_cache: Optional[KVCache] = None,  # NEW: Pre-decompressed KV cache
+        input_ids: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass with AttnRes.
@@ -169,6 +183,17 @@ class AdaptiveLayer(nn.Module):
             block_representations = []
         if partial_block is None:
             partial_block = hidden_states
+
+        # Stage-3 storage optimization (Engram): inject memory before AttnRes/attention.
+        if use_engram and self.engram is not None and input_ids is not None:
+            hidden_expanded = hidden_states.unsqueeze(2)  # [B, T, 1, D]
+            engram_out = self.engram(hidden_expanded, input_ids).squeeze(2)
+            hidden_states = hidden_states + engram_out
+            if len(block_representations) > 0:
+                block_representations = list(block_representations)
+                block_representations[0] = hidden_states
+            if block_representations is not None and len(block_representations) == 0:
+                partial_block = hidden_states
         
         if use_attnres and attnres_module is not None:
             h_attn, _ = attnres_module(
@@ -261,6 +286,11 @@ class AdaptiveTransformer(nn.Module):
         # Zero-initialize pseudo-queries
         for attnres in self.attnres_modules:
             attnres.reset_parameters()
+
+        # RaBitQ cache book-keeping is always initialized to avoid
+        # attribute errors when external caches are passed in forward().
+        self._rabitq_kv_cache: Dict[int, KVCache] = {}
+        self._rabitq_cache_seq_len: int = 0
     
     def _init_weights(self, module):
         """Initialize weights."""
@@ -275,6 +305,7 @@ class AdaptiveTransformer(nn.Module):
         self,
         input_ids: torch.Tensor,
         use_attnres: bool = True,
+        use_engram: bool = True,
         use_qttt: bool = False,
         qttt_config: Optional[Dict] = None,
         kv_caches: Optional[List[KVCache]] = None,
@@ -306,6 +337,7 @@ class AdaptiveTransformer(nn.Module):
         # Cache is invalidated when input shape changes
         if use_rabitq and rabitq_caches is not None:
             if T != self._rabitq_cache_seq_len:
+                self._reset_rabitq_caches(rabitq_caches)
                 self.invalidate_rabitq_cache()
                 self._rabitq_cache_seq_len = T
         
@@ -327,7 +359,7 @@ class AdaptiveTransformer(nn.Module):
         if use_rabitq and rabitq_caches is not None and len(self._rabitq_kv_cache) == 0:
             # First call with this input - build cache
             rabitq_kv_caches = self._build_rabitq_kv_cache(
-                hidden, rabitq_caches, use_attnres, attnres_modules=self.attnres_modules
+                hidden, rabitq_caches, use_attnres, attnres_modules=self.attnres_modules, input_ids=input_ids
             )
         elif use_rabitq and rabitq_caches is not None:
             # Use cached KV
@@ -343,6 +375,13 @@ class AdaptiveTransformer(nn.Module):
             kv_cache = kv_caches[layer_idx] if kv_caches is not None else None
             rq_cache = rabitq_caches[layer_idx] if (use_rabitq and rabitq_caches is not None) else None
             rq_kv_cache = rabitq_kv_caches[layer_idx] if rabitq_kv_caches else None
+            if rq_kv_cache is None and rq_cache is not None:
+                rq_kv_cache = self._get_cached_rabitq_kv(
+                    layer_idx=layer_idx,
+                    rabitq_cache=rq_cache,
+                    expected_seq_len=T,
+                    dtype=hidden.dtype,
+                )
             
             # Only apply adapted query to the specified layer
             layer_adapted_query = adapted_query if layer_idx == adapted_query_layer_idx else None
@@ -361,6 +400,7 @@ class AdaptiveTransformer(nn.Module):
                     layer_adapted_query,
                     rq_cache,
                     rq_kv_cache,  # Pass pre-decompressed cache
+                    input_ids,
                     use_reentrant=False,
                 )
             else:
@@ -370,11 +410,13 @@ class AdaptiveTransformer(nn.Module):
                     partial_block,
                     attnres if use_attnres else None,
                     use_attnres=use_attnres,
+                    use_engram=use_engram,
                     use_qttt=use_qttt,
                     kv_cache=kv_cache,
                     adapted_query=layer_adapted_query,
                     rabitq_cache=rq_cache,
                     rabitq_kv_cache=rq_kv_cache,  # Pass pre-decompressed cache
+                    input_ids=input_ids,
                 )
         
         # Final AttnRes aggregation (if enabled)
@@ -402,6 +444,7 @@ class AdaptiveTransformer(nn.Module):
         rabitq_caches: List,
         use_attnres: bool,
         attnres_modules: nn.ModuleList,
+        input_ids: Optional[torch.Tensor] = None,
     ) -> List[Optional[KVCache]]:
         """
         Build RaBitQ KV cache by running a forward pass and caching decompressed KVs.
@@ -421,6 +464,15 @@ class AdaptiveTransformer(nn.Module):
                 if use_attnres and layer_idx > 0 and layer_idx % layers_per_block == 0:
                     block_representations.append(partial_block)
                     partial_block = torch.zeros_like(hidden)
+
+                if layer.engram is not None and input_ids is not None:
+                    hidden_expanded = hidden.unsqueeze(2)
+                    hidden = hidden + layer.engram(hidden_expanded, input_ids).squeeze(2)
+                    if use_attnres and len(block_representations) > 0:
+                        block_representations = list(block_representations)
+                        block_representations[0] = hidden
+                    elif not use_attnres:
+                        partial_block = hidden
                 
                 # Compute AttnRes input
                 if use_attnres and attnres is not None:
@@ -484,27 +536,57 @@ class AdaptiveTransformer(nn.Module):
         self._rabitq_kv_cache: Dict[int, KVCache] = {}
         self._rabitq_cache_seq_len: int = 0
     
-    def _get_cached_rabitq_kv(self, layer_idx: int, rabitq_cache) -> KVCache:
+    def _get_cached_rabitq_kv(
+        self,
+        layer_idx: int,
+        rabitq_cache,
+        expected_seq_len: Optional[int] = None,
+        dtype: Optional[torch.dtype] = None,
+    ) -> Optional[KVCache]:
         """
         Get decompressed KV cache with caching to avoid repeated decompression.
         
         OPTIMIZATION: This significantly speeds up RaBitQ + AttnRes combined mode
         by caching the decompressed KV instead of decompressing every forward pass.
         """
-        # Check if we have valid cached KV
+        # Check if we have valid cached KV.
         if layer_idx in self._rabitq_kv_cache:
             return self._rabitq_kv_cache[layer_idx]
-        
-        # Decompress and cache
-        # Note: This is a simplified version - actual implementation would
-        # decompress from rabitq_cache
-        # For now, return None to use default path
-        return None
+
+        if not hasattr(rabitq_cache, "get_kv") or not hasattr(rabitq_cache, "get_seq_length"):
+            return None
+
+        seq_len = rabitq_cache.get_seq_length(layer_idx)
+        if seq_len == 0:
+            return None
+        if expected_seq_len is not None and seq_len != expected_seq_len:
+            return None
+
+        kv_dtype = dtype if dtype is not None else next(self.parameters()).dtype
+        full_k, full_v = rabitq_cache.get_kv(layer_idx, dtype=kv_dtype)
+        kv_cache = KVCache(full_k, full_v)
+        self._rabitq_kv_cache[layer_idx] = kv_cache
+        return kv_cache
     
     def invalidate_rabitq_cache(self):
         """Invalidate the RaBitQ KV cache (call when input changes)."""
         self._rabitq_kv_cache.clear()
         self._rabitq_cache_seq_len = 0
+
+    def _reset_rabitq_caches(self, rabitq_caches) -> None:
+        """Reset underlying RaBitQ states when sequence shape changes."""
+        if rabitq_caches is None:
+            return
+        seen = set()
+        for cache in rabitq_caches:
+            if cache is None:
+                continue
+            cache_id = id(cache)
+            if cache_id in seen:
+                continue
+            seen.add(cache_id)
+            if hasattr(cache, "reset"):
+                cache.reset()
     
     def get_rabitq_memory_stats(self, seq_len: int, batch_size: int = 1) -> Dict[str, float]:
         """Calculate memory statistics when RaBitQ is active."""
@@ -572,6 +654,7 @@ class AdaptiveTransformer(nn.Module):
         temperature: float = 1.0,
         top_k: Optional[int] = None,
         use_attnres: bool = True,
+        use_engram: bool = True,
         use_qttt: bool = False,
         qttt_config: Optional[Dict] = None,
         use_rabitq: bool = False,
@@ -710,6 +793,7 @@ class AdaptiveTransformer(nn.Module):
             logits = self.forward(
                 output_ids,
                 use_attnres=use_attnres,
+                use_engram=use_engram,
                 use_qttt=use_qttt,
                 kv_caches=kv_caches,
                 adapted_query=adapted_query,

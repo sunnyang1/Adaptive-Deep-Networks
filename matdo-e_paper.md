@@ -1,4 +1,6 @@
-# Crossing the Memory Wall: From Information Collapse to Heterogeneous Resource Arbitrage in Adaptive Deep Networks
+# Crossing the Memory Wall: From Information Collapse to Heterogeneous Resource Arbitrage in Adaptive Deep Networks (MATDO-E)
+
+**Companion to Adaptive Deep Networks (ADN).** The project **first** produced **Paper I** (**ADN**; [1]): a modular **RaBitQ → AttnRes → Engram → qTTT** stack with **benchmarks** (long context, reasoning, latency) and **ablations**. **This manuscript is Paper II** (**MATDO-E**): it **abstracts** that stack into continuous knobs $(R,M,T,E)$ and analyzes **wall ordering**, **$(\rho_{\text{ctx}}-\rho)^{-2}$ adaptation blow-up**, and **heterogeneous Engram arbitrage**. Use **Paper I** for architecture and measured end-to-end scores; use **Paper II** for optimization-theoretic claims.
 
 **Anonymous Submission**
 
@@ -6,38 +8,46 @@
 
 ## Abstract
 
-Large language model (LLM) serving is constrained by GPU HBM. We reveal two critical points: the *compute wall* and the *context wall*. We prove adaptation cost diverges as $(\rho_{\text{ctx}}-\rho)^{-2}$. Our proposed **MATDO-E** framework utilizes DRAM-resident Engrams for resource arbitrage. Evaluations across LLaMA-2, Mistral, and Qwen architectures confirm that MATDO-E extends HBM utilization to 0.99 while maintaining 97%+ accuracy.
+**Writing order.** **Paper I (ADN; [1])** specifies the **four-axis query framework** and the **concrete inference pipeline** evaluated on retrieval and reasoning tasks. **Paper II (MATDO-E)** **follows**: we **do not** introduce a competing architecture, but a **resource model** for the **same** design space.
+
+Large language model (LLM) serving is constrained by GPU HBM. We reveal two critical points: the *compute wall* and the *context wall*. We prove adaptation cost diverges as $(\rho_{\text{ctx}}-\rho)^{-2}$. Our **MATDO-E** framework couples these walls to **$(R,M,T,E)$** and studies **DRAM-resident Engram** as heterogeneous arbitrage. Evaluations across LLaMA-2, Mistral, and Qwen architectures **illustrate** cross-family scaling; **module-level accuracy/latency tables** appear in **[1]**.
 
 ---
 
 ## 1. Introduction
 
-Modern LLMs process queries using attention over a key-value (KV) cache that grows linearly with context length. GPU HBM capacity has become the primary bottleneck in production serving: once the KV cache exceeds HBM, systems must either drop context (harming accuracy) or offload to slower CPU DRAM (increasing latency). This tension is often called the *memory wall*.
+**Chronology.** We developed **Paper I (ADN; [1])** *first*: it names **RaBitQ, AttnRes, Engram, and qTTT** as the **instantiations** of **space / scope / storage / specificity**, and reports **needle-in-haystack**, **MATH**, throughput, and **ablations**. **Paper II (MATDO-E)** is written **after** Paper I: it **keeps** the same four axes but replaces narrative proofs-of-concept with a **continuous** allocation problem and **theorems**. When both papers are cited, **cite Paper I for stack and benchmark claims**; **cite Paper II for formal walls, arbitrage, and asymptotic $T$ scaling**.
+
+Modern LLMs process queries using attention over a key-value (KV) cache that grows linearly with context length. GPU HBM capacity has become the primary bottleneck in production serving: once the KV cache exceeds HBM, systems must either drop context (harming accuracy) or offload to slower CPU DRAM (increasing latency). This tension is often called the *memory wall*. **Paper I (ADN; [1])** addresses this with the **module bundle** above; **here** we ask how **$(R,M,T,E)$** behave **as $\rho \to \rho_{\text{ctx}}$**.
 
 ### Contributions
 
+*(Empirical pipeline and task metrics are in **Paper I** ([1]); the list below is **theory- and policy-centric**.)*
+
 1. **Dual critical points**: We formalize the *compute wall* $\rho_{\text{comp}}$ (where required adaptation steps exceed the latency budget) and the *context wall* $\rho_{\text{ctx}}$ (where remaining context cannot satisfy accuracy even with infinite compute). We prove $\rho_{\text{comp}} < \rho_{\text{ctx}}$; systems always hit the compute wall first.
 
-2. **Quadratic blow-up**: As $\rho \to \rho_{\text{ctx}}^-$, the optimal number of test-time adaptation steps grows as $(\rho_{\text{ctx}}-\rho)^{-2}$, providing a rigorous explanation for the performance cliff.
+2. **Quadratic blow-up**: As $\rho \to \rho_{\text{ctx}}^-$, the optimal number of test-time adaptation steps grows as $(\rho_{\text{ctx}}-\rho)^{-2}$, providing a rigorous explanation for the performance cliff **for query-only adaptation as modeled in Paper I**.
 
-3. **Engram and arbitrage**: We introduce a DRAM-resident static memory tier (Engram) and derive the Heterogeneous Arbitrage Inequality, a simple condition that determines when substituting DRAM for HBM is beneficial. Via convex duality analysis, we prove this inequality is necessary and sufficient for Pareto-optimal allocation.
+3. **Engram and arbitrage**: We analyze a **DRAM-resident** static table (**Engram**, as used in Paper I) and derive the **Heterogeneous Arbitrage Inequality**, a condition for when **DRAM budget** **postpones** the context wall. Via convex duality analysis, we prove this inequality is necessary and sufficient for Pareto-dominating $E=0$ in a **relaxed** convex setting.
 
-4. **Cross-model validation**: We validate MATDO-E across LLaMA-2 (MHA), Mistral (GQA/Sliding Window), and Qwen (GQA) architectures, demonstrating the universal scaling law holds regardless of attention mechanism.
+4. **Cross-model validation**: We report **Paper II (MATDO-E)** behavior across LLaMA-2 (MHA), Mistral (GQA/Sliding Window), and Qwen (GQA), as **stress-tests** of the **scaling law**; **architectural ablations** remain in **Paper I**.
 
 ---
 
 ## 2. Preliminaries and Problem Formulation
 
-We consider an adaptive deep network (ADN) that processes a query $\mathbf{q}$ using a KV cache of $N$ tokens. The cache is partitioned into blocks of size $N_{\text{block}}$.
+**Map from Paper I to $(R,M,T,E)$.** **RaBitQ** (KV **space** / bits) $\rightarrow$ **$R$**; **AttnRes** block summaries (**scope** / HBM-resident history) $\rightarrow$ **$M$**; **qTTT** (**specificity**) $\rightarrow$ **$T$**; **Engram** table (**external storage**) $\rightarrow$ **$E$**. Paper II **optimizes** this envelope; **§3–§5 of Paper I** specify **layers, gates, and training**.
+
+We consider an **ADN** as defined in **Paper I** ([1]) that processes a query $\mathbf{q}$ using a KV cache of $N$ tokens. The cache is partitioned into blocks of size $N_{\text{block}}$.
 
 ### Optimization Knobs
 
 | Knob | Symbol | Description |
 |------|--------|-------------|
-| Quantization | $R$ | bits per key/value |
-| Scope | $M$ | number of blocks kept in HBM |
-| Specificity | $T$ | number of test-time adaptation steps |
-| Engram size | $E$ | number of static entries stored in DRAM |
+| Quantization | $R$ | bits per key/value (**RaBitQ** in Paper I) |
+| Scope | $M$ | number of blocks kept in HBM (**AttnRes** budget; Paper I) |
+| Specificity | $T$ | test-time adaptation steps (**qTTT** in Paper I) |
+| Engram size | $E$ | static entries in DRAM (**Engram** in Paper I) |
 
 ### Constraints
 
@@ -208,7 +218,7 @@ Cost │    ζ=0.2 (inequality fails)
 
 ## 5. Experimental Evaluation
 
-We implement MATDO-E on three diverse architectures: LLaMA-2-7B (MHA), Mistral-7B-v0.1 (GQA/Sliding Window), and Qwen-2-7B (GQA).
+**Division of labor.** **Paper I** ([1]) contains the **primary** long-context and reasoning tables for the **full ADN** pipeline (including AttnRes/RaBitQ details). **This section** isolates **serving-scale** Paper II (MATDO-E) **policies** on public backbones (LLaMA-2-7B MHA, Mistral-7B-v0.1 GQA/sliding, Qwen-2-7B GQA) to **stress-test** wall phenomena **across attention families**—**not** to duplicate Paper I’s ablation matrix.
 
 ### 5.1 Setup
 
@@ -288,19 +298,29 @@ Increasing $\zeta$ or decreasing $\eta$ improves the effective critical $\rho$.
 
 ## 7. Related Work
 
+**Adaptive Deep Networks (Paper I; companion) [1].** The **module-level** pipeline—**RaBitQ + AttnRes + Engram + qTTT**—and **reported accuracies/latencies** appear in **Paper I**. Paper II assumes that pipeline as **given** and contributes **continuous optimization** over $(R,M,T,E)$.
+
 **KV cache management**: SnapKV and H2O use attention scores to evict unimportant tokens; StreamingLLM retains only initial and recent tokens. These methods suffer from accuracy collapse at moderate HBM pressure.
 
 **Offloading and heterogeneous memory**: FlexGen offloads KV cache to CPU/SSD but does not adapt test-time compute. vLLM uses paged attention but still requires HBM for active context.
 
 **Retrieval-augmented generation (RAG)**: RAG retrieves static documents but typically treats retrieval as separate from KV cache optimization. We unify both under a single resource-constrained optimization.
 
-**Test-time adaptation**: Methods like qTTT adapt queries with few gradient steps; our work analyzes how adaptation cost explodes near the context wall.
+**Test-time adaptation**: Methods like qTTT adapt queries with few gradient steps; **Paper I** implements **query-only** adaptation; Paper II analyzes how required **$T$** explodes near the context wall.
 
 ---
 
 ## 8. Conclusion
 
-MATDO-E's ability to generalize across LLaMA, Mistral, and Qwen architectures underscores its fundamental importance for future LLM infrastructure. The Heterogeneous Arbitrage Inequality provides a universal metric for balancing memory hierarchies in the age of massive context. Our framework provides a principled foundation for future cross-tier memory orchestration in cloud-based LLM systems.
+**ADN [1] first established** that a **four-axis** bundle (**RaBitQ, AttnRes, Engram, qTTT**) can be **built and measured** on hard **long-context and math** tasks. **MATDO-E second** supplies **continuous-resource** language—**walls, $(\rho_{\text{ctx}}-\rho)^{-2}$ blow-up, and heterogeneous arbitrage**—for **scheduling** that bundle under **HBM/DRAM/compute budgets**. Together they separate **algorithmic evidence** from **optimization theory** without contradicting either narrative.
+
+---
+
+## References
+
+[1] *Adaptive Deep Networks: Four-Dimensional Query Optimization for Efficient Long-Context Inference* (`ADN_paper.md`). **Paper I**: **architecture**, **four-axis** framework, **benchmarks**, **ablations**, **implementation**. Cite for **end-to-end accuracy/latency** claims.
+
+*[2]–Prior art: consolidate with your venue BibTeX (SnapKV, H2O, FlexGen, vLLM, …). For double-blind submission of **both** papers, refer to the companion manuscripts as **Paper I** and **Paper II** in-text, and map them to concrete titles only where allowed by the venue’s policies.*
 
 ---
 

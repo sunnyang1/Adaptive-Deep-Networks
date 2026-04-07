@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.models.adaptive_transformer import AdaptiveTransformer
 from src.models.configs import ModelConfig
+from src.engram.integration import add_engram_to_config
+from src.engram.config import EngramSmallConfig, EngramMediumConfig, EngramLargeConfig
 
 
 class ModelLoader:
@@ -42,7 +44,8 @@ class ModelLoader:
         self,
         checkpoint_path: Union[str, Path],
         config_path: Optional[Union[str, Path]] = None,
-        strict: bool = True
+        strict: bool = True,
+        enable_engram_if_present: bool = True,
     ) -> tuple:
         """
         从检查点加载模型。
@@ -64,12 +67,6 @@ class ModelLoader:
             # 尝试自动查找配置
             config_path = self._find_config(checkpoint_path)
         
-        config = self._load_config(config_path)
-        
-        # 创建模型
-        print(f"Creating model with config: {config}")
-        model = self._create_model(config)
-        
         # 加载权重
         print(f"Loading checkpoint from: {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
@@ -82,6 +79,26 @@ class ModelLoader:
         else:
             state_dict = checkpoint
         
+        # Load config AFTER state_dict is known, so we can infer Engram.
+        config = self._load_config(config_path)
+        if enable_engram_if_present and not getattr(config, "use_engram", False):
+            has_engram_keys = any(".engram." in k or k.endswith(".engram") or "engram." in k for k in state_dict.keys())
+            if has_engram_keys:
+                # Heuristic: choose Engram config by hidden_dim
+                hd = getattr(config, "hidden_dim", None)
+                if hd == 2048:
+                    engram_cfg = EngramSmallConfig
+                elif hd == 4096:
+                    engram_cfg = EngramMediumConfig
+                else:
+                    engram_cfg = EngramLargeConfig
+                config = add_engram_to_config(config, engram_cfg)
+                print(f"Detected Engram weights in checkpoint. Enabled Engram with config: {engram_cfg}")
+
+        # 创建模型
+        print(f"Creating model with config: {config}")
+        model = self._create_model(config)
+
         model.load_state_dict(state_dict, strict=strict)
         model.to(self.device)
         model.eval()
@@ -98,7 +115,8 @@ class ModelLoader:
         self,
         model_size: str = 'medium',
         use_turboquant: bool = True,
-        use_polar_qttt: bool = True
+        use_polar_qttt: bool = True,
+        use_engram: bool = False,
     ) -> tuple:
         """
         加载预定义的预训练模型配置。
@@ -149,6 +167,13 @@ class ModelLoader:
         # not model config parameters. They should be handled at model initialization.
         
         config = ModelConfig(**config_dict)
+        if use_engram:
+            engram_cfg = {
+                "small": EngramSmallConfig,
+                "medium": EngramMediumConfig,
+                "large": EngramLargeConfig,
+            }[model_size]
+            config = add_engram_to_config(config, engram_cfg)
         model = self._create_model(config)
         model.to(self.device)
         model.eval()
@@ -159,6 +184,7 @@ class ModelLoader:
         print(f"\nInitialized {model_size} model ({sum(p.numel() for p in model.parameters())/1e9:.1f}B params)")
         print(f"  - RaBitQ: {use_turboquant}")
         print(f"  - Polar qTTT: {use_polar_qttt}")
+        print(f"  - Engram: {use_engram}")
         
         return model, config
     
@@ -199,8 +225,9 @@ class ModelLoader:
     
     def _create_model(self, config: ModelConfig) -> nn.Module:
         """创建模型实例"""
-        model = AdaptiveTransformer(config)
-        return model
+        # Engram is integrated directly into AdaptiveLayer in AdaptiveTransformer,
+        # and is toggled by config.use_engram + config.engram_config.
+        return AdaptiveTransformer(config)
     
     def _print_model_info(self, model: nn.Module):
         """打印模型信息"""

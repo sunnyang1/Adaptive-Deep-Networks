@@ -16,6 +16,9 @@ help:
 	@echo "  make paper-metrics - Generate paper metrics"
 	@echo "  make core          - Run core experiments"
 	@echo "  make validate      - Run validation experiments"
+	@echo "  make train-paper-small  - Train small model + strict paper alignment check"
+	@echo "  make train-paper-medium - Train medium model + strict paper alignment check"
+	@echo "  make train-paper-large  - Train large model + strict paper alignment check"
 	@echo ""
 
 # Installation
@@ -66,3 +69,16 @@ paper-metrics:
 # List experiments
 list:
 	python experiments/run_experiments_unified.py --list
+
+# Paper-aligned training wrappers (requires OUTPUT_DIR)
+train-paper-small:
+	@if [ -z "$(OUTPUT_DIR)" ]; then echo "Usage: make train-paper-small OUTPUT_DIR=results/small_paper"; exit 1; fi
+	bash scripts/training/run_with_paper_alignment_check.sh --model-size small --output-dir "$(OUTPUT_DIR)"
+
+train-paper-medium:
+	@if [ -z "$(OUTPUT_DIR)" ]; then echo "Usage: make train-paper-medium OUTPUT_DIR=results/medium_paper"; exit 1; fi
+	bash scripts/training/run_with_paper_alignment_check.sh --model-size medium --output-dir "$(OUTPUT_DIR)"
+
+train-paper-large:
+	@if [ -z "$(OUTPUT_DIR)" ]; then echo "Usage: make train-paper-large OUTPUT_DIR=results/large_paper"; exit 1; fi
+	bash scripts/training/run_with_paper_alignment_check.sh --model-size large --output-dir "$(OUTPUT_DIR)"
