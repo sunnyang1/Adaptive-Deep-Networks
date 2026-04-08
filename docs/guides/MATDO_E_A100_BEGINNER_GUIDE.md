@@ -530,6 +530,7 @@ chmod +x ~/start_matdo_training.sh
 ## 获得帮助
 
 如果遇到问题：
+
 1. 检查日志文件：`checkpoints/*/training.log`
 2. 查看GPU状态：`nvidia-smi`
 3. 测试基础功能：`python -c "import torch; print(torch.cuda.is_available())"`

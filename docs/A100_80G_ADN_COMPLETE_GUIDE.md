@@ -51,22 +51,26 @@ make train-paper-medium OUTPUT_DIR=results/medium_paper
 
 ### 1.1 你需要什么
 
-| 项目 | 要求 | 说明 |
-|------|------|------|
-| 机器 | A100 80GB x 1 或多卡 | 本指南以单卡为例 |
-| 系统 | Ubuntu 20.04/22.04 | 或其他 Linux 发行版 |
-| 网络 | 能访问 GitHub 和 PyPI | 用于下载代码和依赖 |
-| 存储 | 至少 100GB 可用空间 | 模型和数据需要空间 |
-| 时间 | 首次设置 ~30 分钟 | 后续训练 6-12 小时 |
+
+| 项目  | 要求                 | 说明            |
+| --- | ------------------ | ------------- |
+| 机器  | A100 80GB x 1 或多卡  | 本指南以单卡为例      |
+| 系统  | Ubuntu 20.04/22.04 | 或其他 Linux 发行版 |
+| 网络  | 能访问 GitHub 和 PyPI  | 用于下载代码和依赖     |
+| 存储  | 至少 100GB 可用空间      | 模型和数据需要空间     |
+| 时间  | 首次设置 ~30 分钟        | 后续训练 6-12 小时  |
+
 
 ### 1.2 获取服务器访问权限
 
 通常你会收到以下信息：
+
 - IP 地址（如 `192.168.1.100`）
 - 用户名（如 `ubuntu` 或 `root`）
 - 密码或 SSH 密钥
 
 **连接到服务器：**
+
 ```bash
 # 使用密码连接
 ssh ubuntu@192.168.1.100
@@ -76,6 +80,7 @@ ssh -i ~/.ssh/your_key.pem ubuntu@192.168.1.100
 ```
 
 连接成功后，你会看到类似这样的提示：
+
 ```
 ubuntu@a100-server:~$
 ```
@@ -107,6 +112,7 @@ sudo apt-get install -y \
 ```
 
 **解释：**
+
 - `build-essential`：编译工具
 - `git`：版本控制
 - `htop`：系统监控（类似于 Windows 任务管理器）
@@ -140,6 +146,7 @@ source venv/bin/activate
 ```
 
 **⚠️ 重要提示：**
+
 - 虚拟环境激活后，命令行前面会显示 `(venv)`
 - 每次新开终端都要执行 `source venv/bin/activate`
 - 如果忘记激活，会安装到系统环境，可能导致冲突
@@ -156,6 +163,7 @@ pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
 ```
 
 **验证 PyTorch 安装：**
+
 ```bash
 python -c "
 import torch
@@ -170,6 +178,7 @@ if torch.cuda.is_available():
 ```
 
 **预期输出：**
+
 ```
 PyTorch 版本: 2.1.0+cu121
 CUDA 可用: True
@@ -217,6 +226,7 @@ ls -la
 ```
 
 你应该看到类似这样的目录结构：
+
 ```
 AGENTS.md                      docs/
 Adaptive_Deep_Networks_...     experiments/
@@ -235,11 +245,13 @@ data/                          tasks/
 
 ### 3.1 了解模型大小
 
-| 模型 | 参数量 | 显存需求 | 训练时间 (A100 80G) | 适用场景 |
-|------|--------|----------|---------------------|----------|
-| Small | 1.1B | ~16GB | 2-4 小时 | 测试/开发 |
-| Medium | 5.7B | ~40GB | 6-12 小时 | **推荐** |
-| Large | 23B | ~80GB+ | 24-48 小时 | 需要多卡 |
+
+| 模型     | 参数量  | 显存需求   | 训练时间 (A100 80G) | 适用场景   |
+| ------ | ---- | ------ | --------------- | ------ |
+| Small  | 1.1B | ~16GB  | 2-4 小时          | 测试/开发  |
+| Medium | 5.7B | ~40GB  | 6-12 小时         | **推荐** |
+| Large  | 23B  | ~80GB+ | 24-48 小时        | 需要多卡   |
+
 
 对于单张 A100 80GB，**推荐训练 Medium 模型**（5.7B 参数）。
 
@@ -255,6 +267,7 @@ tmux new-session -s training
 ```
 
 **tmux 常用命令：**
+
 - `Ctrl+b 然后按 d`：暂时离开会话（训练继续在后台运行）
 - `tmux attach -t training`：重新连接到会话
 - `tmux ls`：列出所有会话
@@ -288,17 +301,21 @@ python3 scripts/training/train_model.py \
 ```
 
 **参数解释：**
-| 参数 | 值 | 说明 |
-|------|-----|------|
-| `--model-size medium` | 中等模型 | 单卡 A100 80GB 推荐 |
-| `--epochs 3` | 训练 3 轮 | 完整遍历数据集 3 次 |
-| `--batch-size 4` | 批次大小 4 | 根据显存调整，A100 80G 可设 4-8 |
-| `--lr 2e-4` | 学习率 0.0002 | 控制参数更新速度 |
-| `--seq-len 512` | 序列长度 512 | 每次处理的 token 数 |
-| `--train-samples 50000` | 训练样本 5 万 | 用于快速验证 |
-| `--val-samples 5000` | 验证样本 5 千 | 评估模型性能 |
+
+
+| 参数                      | 值          | 说明                     |
+| ----------------------- | ---------- | ---------------------- |
+| `--model-size medium`   | 中等模型       | 单卡 A100 80GB 推荐        |
+| `--epochs 3`            | 训练 3 轮     | 完整遍历数据集 3 次            |
+| `--batch-size 4`        | 批次大小 4     | 根据显存调整，A100 80G 可设 4-8 |
+| `--lr 2e-4`             | 学习率 0.0002 | 控制参数更新速度               |
+| `--seq-len 512`         | 序列长度 512   | 每次处理的 token 数          |
+| `--train-samples 50000` | 训练样本 5 万   | 用于快速验证                 |
+| `--val-samples 5000`    | 验证样本 5 千   | 评估模型性能                 |
+
 
 **训练过程中的输出示例：**
+
 ```
 ======================================================================
 MEDIUM MODEL (AttnRes-M) - ~5.7B Parameters
@@ -326,6 +343,7 @@ Epoch 1/3:   5%|███▌| 2500/50000 [15:32<5:12:34, loss=2.3456]
 ### 3.4 监控训练进度
 
 **方法 1：在 tmux 中查看**
+
 ```bash
 # 如果已断开，重新连接
 tmux attach -t training
@@ -335,6 +353,7 @@ watch -n 1 nvidia-smi
 ```
 
 **方法 2：新开终端查看 GPU 状态**
+
 ```bash
 # 在新终端中
 ssh ubuntu@你的IP
@@ -342,11 +361,13 @@ nvidia-smi
 ```
 
 **预期 GPU 使用率：**
+
 - GPU 利用率：90-100%
 - 显存使用：约 40-60GB
 - 温度：正常 60-80°C
 
 **方法 3：查看训练日志**
+
 ```bash
 # 训练日志保存在输出目录
 cat results/medium_model/training.log
@@ -426,17 +447,21 @@ python3 scripts/evaluation/run_benchmarks.py \
 ```
 
 **可用的基准测试：**
-| 测试 | 说明 | 预计时间 |
-|------|------|----------|
-| `needle` | 针在干草堆（长上下文检索） | 10-20 分钟 |
-| `math` | MATH 数学推理 | 30-60 分钟 |
-| `flop` | FLOP 效率分析 | 5 分钟 |
-| `ablation` | 消融研究 | 20-30 分钟 |
-| `all` | 全部运行 | 1-2 小时 |
+
+
+| 测试         | 说明            | 预计时间     |
+| ---------- | ------------- | -------- |
+| `needle`   | 针在干草堆（长上下文检索） | 10-20 分钟 |
+| `math`     | MATH 数学推理     | 30-60 分钟 |
+| `flop`     | FLOP 效率分析     | 5 分钟     |
+| `ablation` | 消融研究          | 20-30 分钟 |
+| `all`      | 全部运行          | 1-2 小时   |
+
 
 ### 4.3 运行特定实验
 
 **Needle-in-Haystack 测试（长文本检索能力）：**
+
 ```bash
 # 单独运行 needle 测试
 python3 scripts/evaluation/run_benchmarks.py \
@@ -447,6 +472,7 @@ python3 scripts/evaluation/run_benchmarks.py \
 ```
 
 **预期结果：**
+
 - 256K 上下文：准确率 > 85%
 - 512K 上下文：准确率 > 80%
 
@@ -574,11 +600,13 @@ python3 scripts/training/train_model.py \
 ### 问题 1：CUDA Out of Memory（显存不足）
 
 **症状：**
+
 ```
 RuntimeError: CUDA out of memory. Tried to allocate X.XX GiB
 ```
 
 **解决：**
+
 ```bash
 # 减小 batch size
 python3 scripts/training/train_model.py --model-size medium --batch-size 2  # 甚至 1
@@ -593,6 +621,7 @@ python3 scripts/training/train_model.py \
 ### 问题 2：训练速度很慢
 
 **检查 GPU 利用率：**
+
 ```bash
 # 持续监控
 watch -n 1 nvidia-smi
@@ -605,6 +634,7 @@ python3 scripts/training/train_model.py --model-size medium --batch-size 2 --seq
 ### 问题 3：SSH 断开，训练中断
 
 **解决：** 使用 tmux 或 screen
+
 ```bash
 # 创建 tmux 会话
 tmux new -s my_training
@@ -621,11 +651,13 @@ tmux attach -t my_training
 ### 问题 4：导入错误（ModuleNotFoundError）
 
 **症状：**
+
 ```
 ModuleNotFoundError: No module named 'src'
 ```
 
 **解决：**
+
 ```bash
 # 确保在项目根目录
 cd ~/adaptive-deep-networks
@@ -641,11 +673,13 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
 ### 问题 5：Git 连接超时
 
 **症状：**
+
 ```
 fatal: unable to access 'https://github.com/...': Connection timed out
 ```
 
 **解决：**
+
 ```bash
 # 使用 SSH 代替 HTTPS
 git clone git@github.com:sunnyang1/Adaptive-Deep-Networks.git
@@ -717,14 +751,14 @@ du -sh results/*
 
 在开始训练前，确认以下事项：
 
-- [ ] 已连接到 A100 服务器
-- [ ] 已创建并激活虚拟环境 `(venv)`
-- [ ] PyTorch CUDA 可用（`torch.cuda.is_available()` 返回 True）
-- [ ] 已克隆代码仓库
-- [ ] 有足够的磁盘空间（`df -h` 显示至少 50GB 可用）
-- [ ] 已创建 tmux 会话（防止 SSH 断开）
-- [ ] 知道如何查看训练日志
-- [ ] 知道如何监控 GPU 状态
+- 已连接到 A100 服务器
+- 已创建并激活虚拟环境 `(venv)`
+- PyTorch CUDA 可用（`torch.cuda.is_available()` 返回 True）
+- 已克隆代码仓库
+- 有足够的磁盘空间（`df -h` 显示至少 50GB 可用）
+- 已创建 tmux 会话（防止 SSH 断开）
+- 知道如何查看训练日志
+- 知道如何监控 GPU 状态
 
 ---
 
