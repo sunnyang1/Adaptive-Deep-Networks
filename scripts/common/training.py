@@ -4,6 +4,7 @@ Training Utilities
 Shared training functions and checkpoint management.
 """
 
+import shutil
 import torch
 import torch.nn as nn
 from pathlib import Path
@@ -78,24 +79,26 @@ class CheckpointManager:
             'config': config or {},
         }
         
-        # Save latest
+        # Save latest (full state for resume)
         latest_path = self.checkpoint_dir / 'checkpoint_latest.pt'
-        try:
-            torch.save(checkpoint, latest_path)
-        except (OSError, IOError) as e:
-            raise CheckpointError(f"Failed to save checkpoint: {e}")
+        self._save_torch_checkpoint(checkpoint, latest_path, "latest checkpoint")
         
-        # Save epoch-specific
+        # Save epoch-specific (full state for historical resume)
         epoch_path = self.checkpoint_dir / f'checkpoint_epoch_{epoch}.pt'
-        try:
-            torch.save(checkpoint, epoch_path)
-        except (OSError, IOError) as e:
-            raise CheckpointError(f"Failed to save checkpoint: {e}")
+        self._save_torch_checkpoint(checkpoint, epoch_path, f"epoch checkpoint (epoch={epoch})")
         
-        # Save best if applicable
+        # Save best if applicable (weights-only to reduce disk footprint)
         if is_best and self.keep_best:
             best_path = self.checkpoint_dir / 'checkpoint_best.pt'
-            torch.save(checkpoint, best_path)
+            best_checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': checkpoint['model_state_dict'],
+                'loss': loss,
+                'metrics': metrics or {},
+                'config': config or {},
+                'weights_only': True,
+            }
+            self._save_torch_checkpoint(best_checkpoint, best_path, "best checkpoint")
         
         # Cleanup old checkpoints
         self._cleanup_old_checkpoints()
@@ -147,6 +150,19 @@ class CheckpointManager:
         while len(checkpoints) > self.max_checkpoints:
             old_checkpoint = checkpoints.pop(0)
             old_checkpoint.unlink()
+
+    def _save_torch_checkpoint(self, payload: Dict[str, Any], path: Path, label: str) -> None:
+        """Save a checkpoint payload with better disk-related diagnostics."""
+        try:
+            torch.save(payload, path)
+        except (OSError, IOError, RuntimeError) as e:
+            usage = shutil.disk_usage(self.checkpoint_dir)
+            free_gb = usage.free / (1024 ** 3)
+            total_gb = usage.total / (1024 ** 3)
+            raise CheckpointError(
+                f"Failed to save {label} to {path}: {e} "
+                f"(disk free: {free_gb:.2f} GB / {total_gb:.2f} GB)"
+            ) from e
 
 
 def compute_loss(

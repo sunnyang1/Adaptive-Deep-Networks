@@ -1,8 +1,8 @@
 # Adaptive Deep Networks (ADN)
 
-[![Validation](https://github.com/sunnyang1/Adaptive-Deep-Networks/workflows/Validation/badge.svg)](https://github.com/sunnyang1/Adaptive-Deep-Networks/actions)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[Validation](https://github.com/sunnyang1/Adaptive-Deep-Networks/actions)
+[Python 3.9+](https://www.python.org/downloads/)
+[License](LICENSE)
 
 Adaptive Deep Networks is a research codebase for training and validating architectures that combine:
 
