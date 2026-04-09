@@ -254,12 +254,18 @@ class BaseTrainer(ABC):
         s = str(raw).strip().lower()
         if s in ("true", "1", "yes", "latest", "auto"):
             p = Path(self.args.output_dir) / "checkpoints" / "checkpoint_latest.pt"
-        else:
-            p = Path(raw).expanduser()
             if not p.is_file():
-                alt = Path(self.args.output_dir) / raw
-                if alt.is_file():
-                    p = alt
+                print(
+                    f"Warning: --resume {raw!r} but no file at {p}; "
+                    "starting training from scratch."
+                )
+                return None
+            return p
+        p = Path(raw).expanduser()
+        if not p.is_file():
+            alt = Path(self.args.output_dir) / raw
+            if alt.is_file():
+                p = alt
         if not p.is_file():
             raise FileNotFoundError(
                 f"--resume: checkpoint not found (input={raw!r}, resolved={p})"
