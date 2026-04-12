@@ -35,12 +35,14 @@ This tension, widely termed the **memory wall**, has spurred a diverse set of mi
 
 This paper develops such a unified theory. We build upon a concrete instantiation of four modular techniques from recent work on **Adaptive Deep Networks (ADN)** [1]:
 
-| ADN Module | Function | Abstracted Knob |
-|:---|:---|:---|
-| **RaBitQ** [8,9] | Quantizes KV cache to $b$-bit codes | $R$: bits per key/value |
-| **Block AttnRes** [19] | Retains $M$ block summaries in HBM for depth-wise attention | $M$: HBM-resident blocks |
-| **qTTT** | Performs $T$ steps of query-direction adaptation | $T$: adaptation steps |
-| **Engram** [20] | Hashed lookup into a static DRAM table of size $E$ | $E$: external memory entries |
+
+| ADN Module             | Function                                                    | Abstracted Knob              |
+| ---------------------- | ----------------------------------------------------------- | ---------------------------- |
+| **RaBitQ** [8,9]       | Quantizes KV cache to $b$-bit codes                         | $R$: bits per key/value      |
+| **Block AttnRes** [19] | Retains $M$ block summaries in HBM for depth-wise attention | $M$: HBM-resident blocks     |
+| **qTTT**               | Performs $T$ steps of query-direction adaptation            | $T$: adaptation steps        |
+| **Engram** [20]        | Hashed lookup into a static DRAM table of size $E$          | $E$: external memory entries |
+
 
 **Paper I [1] establishes the architectural feasibility of this four-axis pipeline and reports detailed accuracy/latency benchmarks** (e.g., 79.5% needle-in-haystack at 128K, 52.8% on MATH at 8.7B). In this work, we **abstract** these modules into continuous knobs $(R, M, T, E)$ and analyze the **resource-theoretic problem** of jointly scheduling them under HBM, DRAM, and compute budgets.
 
@@ -51,13 +53,9 @@ This paper develops such a unified theory. We build upon a concrete instantiatio
 We make the following theoretical and empirical contributions:
 
 1. **Unified resource model** (Section 2). We formalize inference as a constrained optimization over $(R,M,T,E)$, with an additive error model and hardware budgets.
-
 2. **Dual critical points** (Section 3). We define the **context wall** $\rho_{\text{ctx}}$ and **compute wall** $\rho_{\text{comp}}$, and prove $\rho_{\text{comp}} < \rho_{\text{ctx}}$: systems always run out of compute budget before they run out of context capacity.
-
 3. **Quadratic divergence of adaptation cost** (Section 3.3). We prove $T^* \propto (\rho_{\text{ctx}}-\rho)^{-2}$, providing a mathematical explanation for the "accuracy cliff" observed when HBM pressure approaches the context wall.
-
 4. **Heterogeneous arbitrage inequality** (Section 4). We derive a practical condition for when Engram (DRAM) postpones the context wall, elevating the intuition "DRAM is cheaper than HBM" into a formal decision rule.
-
 5. **Cross-architecture validation** (Section 5). We verify the predicted $T^*$ scaling and wall postponement on LLaMA-2 (MHA), Mistral (sliding-window GQA), and Qwen (GQA), demonstrating that memory-wall dynamics are **architecturally robust**.
 
 ### 1.4 Relationship to Existing Heterogeneous Memory Solutions
@@ -90,13 +88,13 @@ Engram [20] adds a hashed embedding table queried in $O(1)$ time using n-gram fe
 
 Following the additive decomposition validated in [1], we model end-to-end inference error as:
 
-$$\mathcal{E}(R,M,T,E) = \underbrace{\alpha 2^{-2R}}_{\text{quantization}} + \underbrace{\frac{\beta f(E)}{MS}}_{\text{scope}} + \underbrace{\frac{\gamma}{\sqrt{T}}}_{\text{specificity}} + \underbrace{\delta\frac{2^{-2R}}{M} + \epsilon\frac{\ln M}{T}}_{\text{couplings}} + \underbrace{r(E)}_{\text{retrieval}} \tag{1}$$
+$$\mathcal{E}(R,M,T,E) = \underbrace{\alpha 2^{-2R}}*{\text{quantization}} + \underbrace{\frac{\beta f(E)}{MS}}*{\text{scope}} + \underbrace{\frac{\gamma}{\sqrt{T}}}*{\text{specificity}} + \underbrace{\delta\frac{2^{-2R}}{M} + \epsilon\frac{\ln M}{T}}*{\text{couplings}} + \underbrace{r(E)}_{\text{retrieval}} \tag{1}$$
 
 where $f(E) = 1 - \zeta(1 - e^{-E/E_0})$ captures Engram's compensation for missing context ($\zeta \in [0,1]$ is the maximum compensation factor, and $E_0$ is a saturation constant), and
 $$
 r(E)=
 \begin{cases}
-0, & E=0 \\
+0, & E=0 
 \eta/E, & E>0
 \end{cases}
 $$
@@ -120,9 +118,9 @@ We first analyze the system without Engram ($E=0$). This baseline reveals two fu
 
 ### 3.1 Definitions
 
-**Definition 3.1** (Minimum feasible scope). For a target error $\mathcal{E}_{\text{target}}$ and fixed $R=R_{\min}$, the minimum number of HBM blocks required is:
+**Definition 3.1** (Minimum feasible scope). For a target error $\mathcal{E}*{\text{target}}$ and fixed $R=R*{\min}$, the minimum number of HBM blocks required is:
 
-$$M_{\min} = \frac{\beta + \delta 2^{-2R_{\min}}}{S(\mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}})} \tag{2}$$
+$$M_{\min} = \frac{\beta + \delta 2^{-2R_{\min}}}{S(\mathcal{E}*{\text{target}} - \alpha 2^{-2R*{\min}})} \tag{2}$$
 
 **Definition 3.2** (Context wall). The HBM utilization at which available memory exactly fits $M_{\min}$ blocks:
 
@@ -130,7 +128,7 @@ $$\rho_{\text{ctx}} = 1 - \frac{M_{\min} N_{\text{block}} R_{\min} C_{\text{unit
 
 For $\rho > \rho_{\text{ctx}}$, even with infinite compute the SLA cannot be met.
 
-**Definition 3.3** (Compute wall). Given FLOPs budget $\mathcal{B}_{\max}$, the maximum adaptation steps are $T_{\max} = (\mathcal{B}_{\max} - c_R R_{\min} d - c_M M S d)/(c_T d^2)$. The compute wall $\rho_{\text{comp}}$ is the largest $\rho$ such that $T^*(\rho) \le T_{\max}$.
+**Definition 3.3** (Compute wall). Given FLOPs budget $\mathcal{B}*{\max}$, the maximum adaptation steps are $T*{\max} = (\mathcal{B}*{\max} - c_R R*{\min} d - c_M M S d)/(c_T d^2)$. The compute wall $\rho_{\text{comp}}$ is the largest $\rho$ such that $T^*(\rho) \le T_{\max}$.
 
 ### 3.2 Ordering of Walls
 
@@ -138,7 +136,7 @@ For $\rho > \rho_{\text{ctx}}$, even with infinite compute the SLA cannot be met
 
 *Proof sketch.* When HBM is tight, $M^*(\rho) = C_{\text{HBM}}(1-\rho)/(N_{\text{block}} R_{\min} C_{\text{unit}})$. As $\rho \to \rho_{\text{ctx}}^-$, $M^* \to M_{\min}^+$. Define $\delta_M = M^* - M_{\min} \propto (\rho_{\text{ctx}}-\rho)$. The residual error budget is:
 
-$$\Delta(\rho) = \mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}} - \frac{\beta}{M^* S} - \delta \frac{2^{-2R_{\min}}}{M^*} \approx \frac{\beta \delta_M}{M_{\min}^2 S} \propto (\rho_{\text{ctx}}-\rho)$$
+$$\Delta(\rho) = \mathcal{E}*{\text{target}} - \alpha 2^{-2R*{\min}} - \frac{\beta}{M^* S} - \delta \frac{2^{-2R_{\min}}}{M^*} \approx \frac{\beta \delta_M}{M_{\min}^2 S} \propto (\rho_{\text{ctx}}-\rho)$$
 
 Setting $\gamma/\sqrt{T^*} = \Delta(\rho)$ yields $T^* \propto (\rho_{\text{ctx}}-\rho)^{-2}$, which diverges as $\rho \to \rho_{\text{ctx}}^-$. Since $T_{\max}$ is finite, there exists a unique $\rho_{\text{comp}} < \rho_{\text{ctx}}$. $\square$
 
@@ -156,7 +154,7 @@ We now introduce Engram ($E>0$) and analyze its effect on the critical points.
 
 With Engram, the minimum HBM blocks become:
 
-$$M_{\min}^E = \frac{\beta f(E_{\max}) + \delta 2^{-2R_{\min}}}{S(\mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}} - \eta/E_{\max})} \tag{4}$$
+$$M_{\min}^E = \frac{\beta f(E_{\max}) + \delta 2^{-2R_{\min}}}{S(\mathcal{E}*{\text{target}} - \alpha 2^{-2R*{\min}} - \eta/E_{\max})} \tag{4}$$
 
 Since $r(E)=\eta/E$ for $E>0$, this term acts as a fixed retrieval penalty at a given $E$ and reduces the residual error budget available to quantization and scope terms, which yields the denominator in Eq. (4).
 
@@ -201,14 +199,16 @@ Table 1 reports the critical $\rho$ and performance metrics for each model under
 
 **Table 1: Cross-architecture validation**
 
-| Architecture | Method | Accuracy (%) | P99 Latency (ms) | Critical $\rho$ |
-|:---|:---|:---:|:---:|:---:|
-| LLaMA-2-7B | Baseline | 82.4 | 315 | 0.93 |
-| | **MATDO-E** | **97.8** | **142** | **0.99** |
-| Mistral-7B | Baseline | 79.1 | 342 | 0.91 |
-| | **MATDO-E** | **96.5** | **158** | **0.98** |
-| Qwen-2-7B | Baseline | 85.3 | 298 | 0.94 |
-| | **MATDO-E** | **98.1** | **135** | **0.99** |
+
+| Architecture | Method      | Accuracy (%) | P99 Latency (ms) | Critical $\rho$ |
+| ------------ | ----------- | ------------ | ---------------- | --------------- |
+| LLaMA-2-7B   | Baseline    | 82.4         | 315              | 0.93            |
+|              | **MATDO-E** | **97.8**     | **142**          | **0.99**        |
+| Mistral-7B   | Baseline    | 79.1         | 342              | 0.91            |
+|              | **MATDO-E** | **96.5**     | **158**          | **0.98**        |
+| Qwen-2-7B    | Baseline    | 85.3         | 298              | 0.94            |
+|              | **MATDO-E** | **98.1**     | **135**          | **0.99**        |
+
 
 MATDO-E consistently postpones the context wall by 6–8 percentage points while improving accuracy by 14–18% and reducing P99 latency by 40–55%. The quadratic divergence trend of $T^*$ is observed in all three architectures (see Appendix D), confirming the cross-architecture robustness of the memory-wall phenomenon.
 
@@ -218,15 +218,17 @@ Table 2 compares MATDO-E against leading KV cache management systems on LLaMA-2-
 
 **Table 2: System comparison (LLaMA-2-7B, $\rho=0.9$)**
 
-| Method | Accuracy (%) | P99 Latency (ms) | Throughput (tok/s) |
-|:---|:---:|:---:|:---:|
-| SnapKV | 67.1 | 342 | 1240 |
-| H2O | 66.8 | 358 | 1180 |
-| StreamingLLM | 71.3 | 311 | 1350 |
-| FlexGen | 84.2 | 287 | 1420 |
-| vLLM + Offload | 86.5 | 203 | 2100 |
-| MATDO (3D, no Engram) | 95.2 | 176 | 1950 |
-| **MATDO-E (4D)** | **97.8** | **142** | **1880** |
+
+| Method                | Accuracy (%) | P99 Latency (ms) | Throughput (tok/s) |
+| --------------------- | ------------ | ---------------- | ------------------ |
+| SnapKV                | 67.1         | 342              | 1240               |
+| H2O                   | 66.8         | 358              | 1180               |
+| StreamingLLM          | 71.3         | 311              | 1350               |
+| FlexGen               | 84.2         | 287              | 1420               |
+| vLLM + Offload        | 86.5         | 203              | 2100               |
+| MATDO (3D, no Engram) | 95.2         | 176              | 1950               |
+| **MATDO-E (4D)**      | **97.8**     | **142**          | **1880**           |
+
 
 MATDO-E achieves the highest accuracy and lowest latency. The 3D variant (no Engram) already outperforms prior methods, highlighting the benefit of joint $(R,M,T)$ optimization; Engram provides the additional wall postponement.
 
@@ -309,15 +311,17 @@ This work lays a **mathematical foundation** for scheduling adaptive LLM inferen
 
 ## Appendix A: Hardware Constants
 
-| Symbol | Value (A100) | Description |
-|:---|:---:|:---|
-| $C_{\text{HBM}}$ | 80 GB | Total HBM capacity |
-| $C_{\text{DRAM}}$ | 512 GB | Total DRAM capacity |
-| $C_{\text{unit}}$ | 2 bytes | Bytes per FP16 element |
-| $N_{\text{block}}$ | 256 | Tokens per block |
-| $S$ | $N_{\text{block}} \cdot d$ | Block size in elements |
-| $d$ | 4096 | Hidden dimension |
-| $L$ | 4096 | Bytes per Engram entry |
+
+| Symbol             | Value (A100)               | Description            |
+| ------------------ | -------------------------- | ---------------------- |
+| $C_{\text{HBM}}$   | 80 GB                      | Total HBM capacity     |
+| $C_{\text{DRAM}}$  | 512 GB                     | Total DRAM capacity    |
+| $C_{\text{unit}}$  | 2 bytes                    | Bytes per FP16 element |
+| $N_{\text{block}}$ | 256                        | Tokens per block       |
+| $S$                | $N_{\text{block}} \cdot d$ | Block size in elements |
+| $d$                | 4096                       | Hidden dimension       |
+| $L$                | 4096                       | Bytes per Engram entry |
+
 
 ## Appendix B: Proof Sketch of Theorem 4.2 (Convex Duality)
 
@@ -325,10 +329,10 @@ We summarize the dual argument used in Section 4.2.
 
 Let $x=1/M$, $y=1/\sqrt{T}$, and $z=1/E$ for $E>0$. Under a concave relaxation of $f(E)$, the objective and constraints are convex in $(x,y,z)$ over the feasible region with $x,y,z \ge 0$. Slater's condition holds when there exists a strictly feasible point under the HBM/DRAM/compute budgets, so strong duality applies.
 
-Define the Lagrangian with multipliers for error and resource constraints. KKT stationarity yields the marginal-balance condition:
+# Define the Lagrangian with multipliers for error and resource constraints. KKT stationarity yields the marginal-balance condition:
 $$
 \frac{-\partial \mathcal{E}/\partial M}{c_M S d}
-=
+
 \frac{-\partial \mathcal{E}/\partial E}{c_E L},
 $$
 for interior points where both memory constraints are active.
@@ -370,9 +374,7 @@ In experiments we use $\lambda=0.95$ and initialize $P_0=\kappa I$ with large $\
 This appendix reports compact supplementary summaries used in Section 5.
 
 1. **Coupling-term sensitivity.** For each architecture, removing $(\delta,\epsilon)$ from Eq. (1) changes predicted $\rho_{\text{ctx}}$ by less than 0.02 in absolute value (i.e., under 2% relative shift in wall position) in our fitted regime.
-
 2. **Wall-shift consistency.** The context-wall shift from baseline to MATDO-E is 0.06 (LLaMA-2), 0.07 (Mistral), and 0.05 (Qwen), consistent with the arbitrage interpretation.
-
 3. **Latency trend near wall.** Across all models, latency remains smooth at moderate $\rho$ and rises sharply when policies require larger $T$, consistent with the $(\rho_{\text{ctx}}-\rho)^{-2}$ scaling trend.
 
 ---
