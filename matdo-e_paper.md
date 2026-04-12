@@ -330,6 +330,7 @@ We summarize the dual argument used in Section 4.2.
 Let $x=1/M$, $y=1/\sqrt{T}$, and $z=1/E$ for $E>0$. Under a concave relaxation of $f(E)$, the objective and constraints are convex in $(x,y,z)$ over the feasible region with $x,y,z \ge 0$. Slater's condition holds when there exists a strictly feasible point under the HBM/DRAM/compute budgets, so strong duality applies.
 
 # Define the Lagrangian with multipliers for error and resource constraints. KKT stationarity yields the marginal-balance condition:
+
 $$
 \frac{-\partial \mathcal{E}/\partial M}{c_M S d}
 
