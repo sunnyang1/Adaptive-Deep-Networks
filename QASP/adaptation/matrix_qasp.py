@@ -40,7 +40,12 @@ def matrix_qasp_update(
     if quality_scores is None:
         quality_weight = matrix.new_tensor(1.0)
     else:
-        quality_weight = quality_scores.mean().to(matrix.dtype).clamp(0.0, 1.0)
+        if quality_scores.numel() == 0:
+            raise ValueError("`quality_scores` must be non-empty when provided.")
+        mean_quality = quality_scores.mean()
+        if not torch.isfinite(mean_quality):
+            raise ValueError("`quality_scores` mean must be finite.")
+        quality_weight = mean_quality.to(matrix.dtype).clamp(0.0, 1.0)
 
     adapted = matrix
     for _ in range(num_adapt_steps):

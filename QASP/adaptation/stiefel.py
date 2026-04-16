@@ -18,6 +18,10 @@ def project_to_stiefel(
 
     if matrix.ndim != 2:
         raise ValueError("`matrix` must be 2D.")
+    if matrix.shape[0] < matrix.shape[1]:
+        raise ValueError(
+            "`matrix` must satisfy rows >= cols for column-orthonormal projection."
+        )
     if num_iters < 1:
         raise ValueError("`num_iters` must be >= 1.")
     if eps <= 0:

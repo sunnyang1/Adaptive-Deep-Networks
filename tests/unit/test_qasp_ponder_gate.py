@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -51,4 +52,14 @@ def test_matrix_qasp_returns_original_when_gate_blocks_adaptation() -> None:
     )
 
     assert torch.allclose(updated, matrix)
+
+
+def test_matrix_qasp_raises_for_empty_quality_scores() -> None:
+    """Empty quality scores should fail fast with a clear error."""
+
+    matrix = torch.eye(4)
+    gradient = torch.ones_like(matrix)
+
+    with pytest.raises(ValueError, match="non-empty"):
+        matrix_qasp_update(matrix, gradient, quality_scores=torch.tensor([]))
 
