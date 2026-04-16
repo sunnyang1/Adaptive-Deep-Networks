@@ -22,13 +22,15 @@ class ValueWeightedEngram(nn.Module):
         memory_quality: Tensor,
         gate: Tensor | float | None = None,
     ) -> Tensor:
+        batch_size, seq_len, _ = hidden_states.shape
+
         if memory_vector.ndim == 2:
-            memory_vector = memory_vector.unsqueeze(1).expand(-1, hidden_states.size(1), -1)
+            memory_vector = memory_vector.unsqueeze(1).expand(-1, seq_len, -1)
         if memory_vector.shape != hidden_states.shape:
             raise ValueError("memory_vector must broadcast to hidden_states shape [B, T, D]")
 
         if memory_quality.ndim == 1:
-            memory_quality = memory_quality.unsqueeze(1).expand(-1, hidden_states.size(1))
+            memory_quality = memory_quality.unsqueeze(1).expand(-1, seq_len)
         quality = torch.sigmoid(memory_quality).unsqueeze(-1)
 
         gate_term = self.default_gate if gate is None else gate
@@ -36,6 +38,16 @@ class ValueWeightedEngram(nn.Module):
             gate_term = torch.tensor(float(gate_term), device=hidden_states.device, dtype=hidden_states.dtype)
         else:
             gate_term = gate_term.to(device=hidden_states.device, dtype=hidden_states.dtype)
+            if gate_term.ndim == 1:
+                if gate_term.shape[0] != batch_size:
+                    raise ValueError("1D gate tensor must have shape [B]")
+                gate_term = gate_term.view(batch_size, 1, 1)
+            elif gate_term.ndim == 2:
+                if gate_term.shape != (batch_size, seq_len):
+                    raise ValueError("2D gate tensor must have shape [B, T]")
+                gate_term = gate_term.unsqueeze(-1)
+            elif gate_term.ndim != 0:
+                raise ValueError("gate must be scalar, [B], or [B, T]")
 
         return hidden_states + gate_term * quality * memory_vector
 
