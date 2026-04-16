@@ -6,7 +6,7 @@ accelerate>=0.24.0
 
 # Optional but recommended
 flash-attn>=2.3.0; sys_platform == 'linux'
-triton>=2.1.0
+triton>=2.1.0; sys_platform == 'linux'
 
 # Scientific computing
 numpy>=1.24.0

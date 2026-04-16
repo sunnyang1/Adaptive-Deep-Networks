@@ -7,9 +7,17 @@ import pytest
 # Legacy tests target removed/renamed APIs (TurboQuant V1/V2, old MNNTurboQuant).
 # Run explicitly with: pytest tests/legacy/ -v
 collect_ignore = ["legacy"]
+import sys
+from pathlib import Path
 import torch
 import numpy as np
 from typing import Tuple
+
+# Ensure repository root is importable so `import src.*` works
+# regardless of how pytest is invoked.
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 @pytest.fixture(scope="session")
