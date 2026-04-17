@@ -128,6 +128,19 @@ By default, `agent_driver.py` uses `cursor-agent` when `AUTORESEARCH_AGENT_CMD_T
 - [AutoResearch Guide](docs/guides/AUTORESEARCH_GUIDE.md)
 - [Documentation Index](docs/README.md)
 
+## MATDO-new Package
+
+`MATDO-new/` is the new paper-aligned MATDO-E package surface. It is intentionally separate from the legacy MATDO orchestration under `experiments/matdo/`.
+
+Current phase-2 behavior:
+
+- `python3 -m matdo_new.apps.generate --dry-run` prints the fully resolved generation request
+- `python3 -m matdo_new.apps.generate` runs policy solve plus the live runtime/backend path and prints generated token ids as JSON
+- `python3 -m matdo_new.apps.run_experiments` runs the lightweight `needle` task and `critical-points` study entrypoints
+- `python3 -m matdo_new.apps.run_experiments --output <path>` writes the normalized experiment payload to a JSON file
+
+Use `MATDO-new/README.md` for the package-local layout, config defaults, and current non-goals.
+
 ## Project Layout
 
 For the canonical, up-to-date layout and file placement rules, see:

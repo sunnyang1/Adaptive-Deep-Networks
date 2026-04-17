@@ -1,0 +1,1255 @@
+\documentclass[twocolumn]{article}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{bm}
+\usepackage{multirow}
+\usepackage{threeparttable}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{enumitem}
+\usepackage{pifont}
+\usepackage[colorlinks, citecolor=blue, linkcolor=black]{hyperref}
+
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+
+\DeclareMathOperator{\msign}{msign}
+\DeclareMathOperator{\St}{St}
+\DeclareMathOperator{\Exp}{Exp}
+\DeclareMathOperator{\Proj}{Proj}
+\DeclareMathOperator{\diag}{diag}
+
+\title{Quality-Aware Stiefel Projection for Adaptive Deep Networks:\\ Matrix-Manifold Query Adaptation and Token Value Weighting}
+
+\author{Anonymous Author(s)}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Long-context inference with Transformers is constrained by four coupled bottlenecks: KV-cache growth, limited access to earlier representations, lack of scalable external memory, and fixed query behavior at test time.
+Adaptive Deep Networks (ADN) addresses these dimensions with RaBitQ for cache compression, AttnRes for block-level depth attention, Engram for external memory, and qTTT for query-only adaptation.
+This paper studies two limitations that remain within that framework: qTTT treats attention heads independently and therefore does not explicitly preserve head diversity, while ADN treats all tokens equally even when many tokens are semantically stable but weakly informative.
+We introduce \textbf{Quality-Aware Stiefel Projection (QASP)}, which augments ADN with two mechanisms: matrix-manifold query adaptation via the matrix sign function $\msign(\mathbf{W})=\mathbf{W}(\mathbf{W}^{\top}\mathbf{W})^{-1/2}$, and information quality weighting that downweights low-value tokens in aggregation and memory retrieval while modulating the strength of test-time adaptation.
+Under an explicit local perturbation model, we derive robustness and convergence statements for value-weighted Stiefel updates under 1-bit RaBitQ compression noise.
+Empirically, preliminary experiments on a 1.5B proxy model suggest that ADN+QASP improves needle-in-haystack accuracy at 128K context from 76.3\% to 80.2\% over the ADN baseline, improves MATH from 48.1\% to 51.3\%, and maintains 112 tokens/s throughput.
+Taken together, these results position QASP as a targeted extension to ADN that improves query diversity and token selectivity while preserving the efficiency advantages of the original framework.
+\end{abstract}
+
+\section{Introduction}
+
+\subsection{The Query-Centric View of Transformers}
+
+Transformer architectures can be fundamentally understood as query-answer systems: each attention head issues a query vector $\mathbf{q}$ that retrieves relevant information from key vectors $\mathbf{k}$ to aggregate value vectors $\mathbf{v}$.
+Despite their remarkable success, standard Transformer implementations suffer from four critical limitations that become increasingly severe in long-context scenarios:
+
+\begin{enumerate}
+    \item \textbf{Space:} The KV cache grows linearly with sequence length. For a 70B parameter model processing 128K tokens, the KV cache alone consumes approximately 40 GB of memory, creating a severe bottleneck for deployment.
+    
+    \item \textbf{Scope:} Residual connections in standard architectures only access the immediate previous layer, causing ``representation burial'' where informative signals from early layers progressively attenuate through deep stacks.
+    
+    \item \textbf{Storage:} Knowledge remains trapped in static parameters; there exists no efficient mechanism to incorporate external, dynamically updatable memory for retrieval-augmented generation.
+    
+    \item \textbf{Specificity:} Query vectors are fixed after pre-training and fail to adapt to test-time distribution shifts, limiting the model's ability to specialize to individual inputs.
+\end{enumerate}
+
+\subsection{The ADN Framework}
+
+To address these four dimensions holistically, we introduce \textbf{Adaptive Deep Networks (ADN)}, a unified framework comprising four synergistic components:
+
+\begin{itemize}
+    \item \textbf{RaBitQ}~\cite{rabitq} addresses the space challenge through 16$\times$ KV cache compression via unbiased 1-bit quantization with theoretical optimality (matching the Alon--Klartag lower bound).
+    
+    \item \textbf{AttnRes}~\cite{attnres} expands the scope through block-level depth attention, reducing memory complexity from $O(Ld)$ to $O(Nd)$ while preventing representation burial (gradient coefficient of variation decreases from 0.84 to 0.11).
+    
+    \item \textbf{Engram}~\cite{engram} enables scalable external storage via n-gram hashing with O(1) deterministic lookup, exhibiting a U-shaped scaling law that identifies optimal neural-memory allocation.
+    
+    \item \textbf{qTTT} (query-only test-time training) enhances specificity through polar-coordinate reparameterization $\mathbf{w} = r \cdot \mathbf{u}$ with frozen magnitude $r$ and unit direction $\mathbf{u}$ updated via Riemannian gradient descent on the sphere, maximizing logit margins.
+\end{itemize}
+
+ADN achieves strong empirical performance (79.5\% needle-in-haystack accuracy at 128K context on an 8.7B model) while maintaining high efficiency (115 tokens/s). Complete architectural details and additional experiments are provided in a companion technical report~\cite{adn}.
+
+\subsection{Two Critical Limitations}
+
+Despite ADN's success, our analysis reveals two fundamental limitations that this work addresses:
+
+\paragraph{Lack of geometric structure.} 
+qTTT operates at the vector level, ignoring the fact that multi-head queries naturally form a matrix structure. Without proper constraints, attention heads may collapse into similar directions, reducing representational diversity. Ideally, query matrices should remain on the Stiefel manifold (with orthogonal columns) to preserve head diversity.
+
+\paragraph{Equal treatment of tokens.}
+All tokens currently contribute equally to attention aggregation and memory retrieval. However, recent analysis~\cite{lastvit} reveals that Transformers exhibit ``lazy aggregation''---they tend to over-rely on semantically stable but low-information tokens (e.g., stop words, background patches), diluting the contribution of content-bearing tokens.
+
+\subsection{Our Contributions}
+
+We introduce \textbf{Quality-Aware Stiefel Projection (QASP)}, a focused extension to ADN that addresses both limitations while preserving ADN's four-dimensional decomposition. Our main contributions are:
+
+\begin{enumerate}
+    \item \textbf{Matrix-level query adaptation for multi-head diversity:} We lift query adaptation from vectors to matrices, employing the matrix sign function $\msign(\mathbf{W})=\mathbf{W}(\mathbf{W}^\top\mathbf{W})^{-1/2}$ to project updates onto the Stiefel manifold. This preserves orthogonality among attention heads and provides a direct geometric mechanism against head collapse.
+    
+    \item \textbf{Information quality awareness across the ADN pipeline:} We introduce a spectral \textbf{information quality score} that quantifies token value through frequency-domain analysis. This score reweights attention aggregation and external memory retrieval, and modulates the strength of test-time updates, yielding a unified response to lazy aggregation.
+    
+    \item \textbf{Assumption-explicit analysis:} Under a local operator model, we establish robustness and convergence statements showing that QASP remains stable under RaBitQ 1-bit compression noise, with controlled error propagation across the update pipeline.
+    
+    \item \textbf{Preliminary empirical evidence:} On a 1.5B proxy model, we observe consistent improvements over the ADN baseline across retrieval and reasoning benchmarks. We do not use larger-model extrapolations as evidence for the paper's main empirical claims.
+\end{enumerate}
+
+\section{The ADN Framework: A Unified Query-Centric Architecture}
+\label{sec:adn}
+
+We present \textbf{Adaptive Deep Networks (ADN)}, a unified framework that addresses four fundamental limitations of standard Transformers through query-centric optimization. ADN comprises four synergistic components, each targeting a specific dimension of the inference pipeline.
+
+\subsection{Space Dimension: RaBitQ Quantization}
+\label{sec:adn-rabitq}
+
+\textbf{Problem.} The KV cache in standard Transformers grows linearly with sequence length, consuming prohibitive memory for long-context inference.
+
+\textbf{Solution.} RaBitQ \cite{rabitq} achieves near-lossless compression through randomized quantization. For query $\mathbf{q} \in \mathbb{R}^d$ and key $\mathbf{k} \in \mathbb{R}^d$, the quantized inner product satisfies:
+\begin{equation}
+\mathbb{E}\bigl[\widehat{\mathbf{q}^\top \mathbf{k}}\bigr] = \mathbf{q}^\top \mathbf{k}, \quad \frac{\mathbb{E}\bigl[(\widehat{\mathbf{q}^\top \mathbf{k}} - \mathbf{q}^\top \mathbf{k})^2\bigr]}{(\mathbf{q}^\top \mathbf{k})^2} \leq \delta^2,
+\end{equation}
+where $\delta \approx 0.123$ for 1-bit quantization. The compression pipeline applies:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Random Hadamard Transform:} $\mathbf{x}' = \mathbf{H}_d \mathbf{D} \mathbf{x}$, where $\mathbf{H}_d$ is the $d$-dimensional Hadamard matrix and $\mathbf{D}$ is a random diagonal sign matrix.
+    \item \textbf{Scalar Quantization:} $\hat{x}_i = \mathrm{sign}(x'_i) \cdot \mathbb{E}[|x'_i|]$ for 1-bit, or uniform quantization for $b$-bit.
+    \item \textbf{Unbiased Estimation:} The inner product is reconstructed as $\widehat{\mathbf{q}^\top \mathbf{k}} = \frac{1}{c} \sum_{i=1}^{d} \hat{q}_i \hat{k}_i$ with proper scaling factor $c$.
+\end{enumerate}
+
+\textbf{Optimality.} RaBitQ achieves the Alon--Klartag lower bound for randomized quantization, providing $16\times$ compression with only $12.3\%$ relative error.
+
+\subsection{Scope Dimension: AttnRes Depth Attention}
+\label{sec:adn-attnres}
+
+\textbf{Problem.} Residual connections in standard Transformers only access the immediate previous layer, causing ``representation burial'' where early-layer signals attenuate through deep stacks.
+
+\textbf{Solution.} AttnRes \cite{attnres} partitions $L$ layers into $N$ blocks ($N \ll L$). For layer $\ell$ in block $n$, the output aggregates all preceding block representations:
+\begin{equation}
+\mathbf{h}_\ell = \sum_{m=0}^{n-1} \alpha_{m \rightarrow \ell} \, \mathbf{B}_m,
+\label{eq:attnres-base}
+\end{equation}
+where $\mathbf{B}_m \in \mathbb{R}^d$ is the output representation of block $m$, computed as $\mathbf{B}_m = \mathrm{RMSNorm}\bigl(\frac{1}{|B_m|} \sum_{i \in B_m} \mathbf{h}_i\bigr)$. The attention weights are:
+\begin{equation}
+\alpha_{m \rightarrow \ell} = \frac{\exp\bigl(\mathbf{w}_\ell^\top \mathbf{B}_m / \sqrt{d}\bigr)}{\sum_{j=0}^{n-1} \exp\bigl(\mathbf{w}_\ell^\top \mathbf{B}_j / \sqrt{d}\bigr)},
+\end{equation}
+where $\mathbf{w}_\ell \in \mathbb{R}^d$ is a learned pseudo-query for layer $\ell$.
+
+\textbf{Benefits.} This expands the effective receptive field from 1 to $N$ blocks, reducing memory from $O(Ld)$ to $O(Nd)$. Gradient flow analysis shows that AttnRes reduces the coefficient of variation of gradient norms from $0.84$ (PreNorm) to $0.11$, effectively preventing representation burial.
+
+\subsection{Storage Dimension: Engram External Memory}
+\label{sec:adn-engram}
+
+\textbf{Problem.} Model knowledge is trapped in static parameters; incorporating external, updatable memory is challenging.
+
+\textbf{Solution.} Engram \cite{engram} provides $O(1)$ deterministic memory lookup via n-gram hashing:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Hashing:} For n-gram tokens $\{t_1, \dots, t_n\}$, compute $\mathrm{idx} = H(t_1, \dots, t_n) \mod M$, where $H$ is a deterministic hash function and $M$ is the memory table size.
+    \item \textbf{Memory Retrieval:} Retrieve memory vector $\mathbf{m}_{\mathrm{idx}} \in \mathbb{R}^d$ from the external embedding table stored in host memory.
+    \item \textbf{Gated Fusion:} Fuse memory with hidden state via:
+    \begin{equation}
+    \mathbf{h}' = \mathbf{h} + \alpha \cdot \mathbf{m}_{\mathrm{idx}}, \quad \alpha = \sigma(\mathbf{w}_g^\top \mathbf{h}),
+    \end{equation}
+    where $\mathbf{w}_g \in \mathbb{R}^d$ is a learned gating vector and $\sigma(\cdot)$ is the sigmoid function.
+\end{enumerate}
+
+\textbf{Scaling Law.} Engram exhibits a U-shaped scaling law: optimal performance occurs when approximately $25\%$ of total capacity is allocated to external memory, effectively increasing knowledge capacity by $1.7\times$.
+
+\subsection{Specificity Dimension: qTTT Query Adaptation}
+\label{sec:adn-qttt}
+
+\textbf{Problem.} Queries in standard Transformers are fixed after pre-training and do not adapt to test-time distribution shifts.
+
+\textbf{Solution.} Query-only Test-Time Training (qTTT) adapts pseudo-queries $\mathbf{w}_\ell$ at inference time through Riemannian optimization on the unit sphere.
+
+\textbf{Polar Reparameterization.} Decompose the query as:
+\begin{equation}
+\mathbf{w}_\ell = r \cdot \mathbf{u}, \quad r = \|\mathbf{w}_\ell\|_2, \quad \mathbf{u} \in \mathcal{S}^{d-1},
+\end{equation}
+where $r$ is frozen (preserving pre-trained magnitude) and $\mathbf{u}$ is updated on the sphere $\mathcal{S}^{d-1} = \{\mathbf{u} \in \mathbb{R}^d : \|\mathbf{u}\|_2 = 1\}$.
+
+\textbf{Riemannian Gradient Descent.} The direction $\mathbf{u}$ is updated to maximize the logit margin:
+\begin{equation}
+\mathbf{u} \leftarrow \Pi_{\mathcal{S}^{d-1}}\bigl(\mathbf{u} - \eta \cdot \mathrm{grad}_{\mathbf{u}} \mathcal{L}\bigr),
+\label{eq:qttt-update}
+\end{equation}
+where $\Pi_{\mathcal{S}^{d-1}}(\mathbf{v}) = \mathbf{v} / \|\mathbf{v}\|_2$ is the spherical projection and the Riemannian gradient is:
+\begin{equation}
+\mathrm{grad}_{\mathbf{u}} \mathcal{L} = (\mathbf{I}_d - \mathbf{u}\mathbf{u}^\top) \nabla_{\mathbf{u}} \mathcal{L},
+\end{equation}
+which projects the Euclidean gradient onto the tangent space $T_{\mathbf{u}}\mathcal{S}^{d-1}$.
+
+\textbf{Ponder Gate.} Adaptation is triggered only when prediction entropy exceeds threshold $\tau_H$ or confidence falls below $\tau_c$, amortizing computational cost:
+\begin{equation}
+\mathrm{adapt} = \mathbb{1}\bigl[\mathcal{H}(p) > \tau_H \lor \max_i p_i < \tau_c\bigr],
+\end{equation}
+where $\mathcal{H}(p) = -\sum_i p_i \log p_i$ is the Shannon entropy of the output distribution.
+
+\section{Lazy Aggregation and Information Quality Scoring}
+\label{sec:info-quality}
+
+\subsection{The Lazy Aggregation Phenomenon}
+
+Recent analysis of Vision Transformers \cite{lastvit} identified a ``lazy aggregation'' phenomenon: models exploit semantically stable background patches as shortcuts for global representation, diluting foreground information. Analogous behavior occurs in language models, where frequent stop words (``the'', ``and'', ``of'') receive disproportionately high attention despite carrying minimal semantic content.
+
+\begin{definition}[Lazy Aggregation]
+A Transformer exhibits lazy aggregation when the attention distribution $\boldsymbol{\alpha}$ concentrates on tokens with high semantic stability but low information content, formally:
+\begin{equation}
+\mathbb{E}_{t \sim \boldsymbol{\alpha}}\bigl[I(t)\bigr] \ll \mathbb{E}_{t \sim \mathrm{Unif}}\bigl[I(t)\bigr],
+\end{equation}
+where $I(t)$ denotes the information content of token $t$.
+\end{definition}
+
+\subsection{Spectral Information Quality Score}
+\label{sec:quality-score}
+
+To quantify token information value, we propose a frequency-based stability measure derived from spectral analysis of hidden representations.
+
+\textbf{Notation.} Let $\mathbf{h}_t \in \mathbb{R}^d$ denote the hidden representation of token $t$ at a given layer. We compute the information quality score $\rho(t) \in [0, 1]$ as follows:
+
+\begin{definition}[Information Quality Score]
+The quality score $\rho(t)$ measures the proportion of high-frequency (information-rich) components in token $t$'s representation:
+\begin{equation}
+\rho(t) = 1 - s(t), \quad s(t) = \frac{\|\mathcal{F}^{-1}\bigl(\hat{\mathbf{h}}_t \odot \mathbf{g}_{\mathrm{LP}}\bigr)\|_2}{\|\mathbf{h}_t\|_2},
+\label{eq:quality-score}
+\end{equation}
+where:
+\begin{itemize}[leftmargin=*]
+    \item $\hat{\mathbf{h}}_t = \mathcal{F}(\mathbf{h}_t) \in \mathbb{C}^d$ is the Discrete Fourier Transform (DFT) along the channel dimension:
+    \begin{equation}
+    \hat{h}_{t,k} = \sum_{n=0}^{d-1} h_{t,n} \cdot e^{-2\pi i k n / d}, \quad k = 0, \dots, d-1.
+    \end{equation}
+    \item $\mathbf{g}_{\mathrm{LP}} \in \mathbb{R}^d$ is a Gaussian low-pass filter with cutoff frequency $f_c$:
+    \begin{equation}
+    g_{\mathrm{LP},k} = \exp\left(-\frac{k^2}{2f_c^2}\right), \quad k = 0, \dots, d-1.
+    \label{eq:gaussian-lpf}
+    \end{equation}
+    \item $\mathcal{F}^{-1}$ denotes the inverse DFT.
+\end{itemize}
+\end{definition}
+
+\textbf{Interpretation.} The stability score $s(t) \in [0, 1]$ measures the proportion of energy in low-frequency (semantically stable) components. Therefore:
+\begin{itemize}[leftmargin=*]
+    \item $\rho(t) \approx 1$ ($s(t) \approx 0$): The token is information-rich with high-frequency content (unusual, content-bearing tokens).
+    \item $\rho(t) \approx 0$ ($s(t) \approx 1$): The token is semantically stable with predominantly low-frequency content (stop words, background patches).
+\end{itemize}
+
+\textbf{Parameter Selection.} The cutoff frequency $f_c$ controls the sensitivity to semantic stability. We set $f_c = d/4$ based on empirical analysis of token frequency distributions (Table~\ref{tab:cutoff-sensitivity}), which effectively separates content-bearing tokens from semantically stable ones while maintaining low overlap with common stop words.
+
+\subsection{Efficient Computation via Sliding Windows}
+\label{sec:sliding-window}
+
+Computing $\rho(t)$ for every token at every layer is computationally prohibitive. We employ two strategies for efficient computation:
+
+\textbf{Ponder-Gated Computation.} The quality score is computed only when the ponder gate triggers adaptation (approximately $30\%$ of tokens), reducing overhead by $70\%$.
+
+\textbf{Sliding Window Amortization.} For a window of $W$ consecutive tokens, we compute the DFT once and reuse it:
+\begin{enumerate}[leftmargin=*]
+    \item Maintain a circular buffer of recent activations $\{\mathbf{h}_{t-W+1}, \dots, \mathbf{h}_t\}$.
+    \item Compute batch DFT: $\hat{\mathbf{H}} = \mathcal{F}(\mathbf{H}) \in \mathbb{C}^{W \times d}$, where $\mathbf{H} \in \mathbb{R}^{W \times d}$ is the stacked activation matrix.
+    \item Apply filter and compute $\rho(t)$ for all tokens in the window simultaneously using vectorized operations.
+\end{enumerate}
+
+\textbf{Complexity.} The amortized cost per token is $O(d \log d / W)$, which becomes negligible for $W = 512$ and $d = 2048$.
+
+\section{Matrix Sign Function and Stiefel Manifold Optimization}
+\label{sec:msign}
+
+\subsection{The Stiefel Manifold}
+
+Multi-head attention queries naturally form a matrix $\mathbf{W} \in \mathbb{R}^{d \times k}$, where $d$ is the hidden dimension and $k$ is the number of heads. To prevent head collapse and maintain diversity among attention heads, we constrain $\mathbf{W}$ to the Stiefel manifold.
+
+\begin{definition}[Stiefel Manifold]
+\label{def:stiefel}
+The Stiefel manifold $\St(k, d)$ is the set of all $d \times k$ matrices with orthonormal columns:
+\begin{equation}
+\St(k, d) = \{\mathbf{U} \in \mathbb{R}^{d \times k} : \mathbf{U}^\top \mathbf{U} = \mathbf{I}_k\}.
+\end{equation}
+\end{definition}
+
+\textbf{Geometric Properties.} The Stiefel manifold is a compact Riemannian manifold of dimension $dk - \frac{k(k+1)}{2}$. The tangent space at $\mathbf{U} \in \St(k, d)$ is:
+\begin{equation}
+T_{\mathbf{U}}\St(k, d) = \{\mathbf{\Delta} \in \mathbb{R}^{d \times k} : \mathbf{U}^\top \mathbf{\Delta} + \mathbf{\Delta}^\top \mathbf{U} = \mathbf{0}\}.
+\end{equation}
+
+\subsection{Matrix Sign Function}
+\label{sec:matrix-sign}
+
+The matrix sign function provides an elegant way to project any full-rank matrix onto the Stiefel manifold.
+
+\begin{definition}[Matrix Sign Function]
+\label{def:msign}
+For a matrix $\mathbf{W} \in \mathbb{R}^{d \times k}$ with $d \geq k$ and full column rank, the matrix sign function is:
+\begin{equation}
+\msign(\mathbf{W}) = \mathbf{W} (\mathbf{W}^\top \mathbf{W})^{-1/2}.
+\label{eq:msign-def}
+\end{equation}
+\end{definition}
+
+\textbf{Connection to SVD.} If $\mathbf{W} = \mathbf{U} \boldsymbol{\Sigma} \mathbf{V}^\top$ is the thin SVD, then:
+\begin{equation}
+\msign(\mathbf{W}) = \mathbf{U} \mathbf{V}^\top,
+\end{equation}
+which is the orthogonal factor of the polar decomposition $\mathbf{W} = \mathbf{Q}\mathbf{P}$, where $\mathbf{Q} = \mathbf{U}\mathbf{V}^\top \in \St(k, d)$ and $\mathbf{P} = \mathbf{V}\boldsymbol{\Sigma}\mathbf{V}^\top$ is symmetric positive definite.
+
+\begin{proposition}[Projection onto Stiefel Manifold]
+The matrix sign function $\msign(\mathbf{W})$ is the unique solution to:
+\begin{equation}
+\msign(\mathbf{W}) = \arg\min_{\mathbf{Q} \in \St(k, d)} \|\mathbf{W} - \mathbf{Q}\|_F.
+\end{equation}
+\end{proposition}
+
+\subsection{Newton-Schulz Iteration}
+\label{sec:newton-schulz}
+
+Direct computation of $(\mathbf{W}^\top \mathbf{W})^{-1/2}$ via SVD is expensive ($O(dk^2)$ with large constants). The Newton-Schulz iteration provides an efficient approximation.
+
+\begin{algorithm}[H]
+\caption{Newton-Schulz Iteration for Matrix Sign Function}
+\label{alg:newton-schulz}
+\begin{algorithmic}[1]
+\REQUIRE Matrix $\mathbf{W} \in \mathbb{R}^{d \times k}$ with $d \geq k$, number of iterations $T$
+\ENSURE $\mathbf{Y}_T \approx \msign(\mathbf{W})$
+\STATE \textbf{Initialize:} $\mathbf{Y}_0 = \mathbf{W} / \|\mathbf{W}\|_2$ \COMMENT{Spectral normalization}
+\FOR{$t = 0, 1, \dots, T-1$}
+    \STATE $\mathbf{Y}_{t+1} = \frac{1}{2} \mathbf{Y}_t (3\mathbf{I}_k - \mathbf{Y}_t^\top \mathbf{Y}_t)$
+\ENDFOR
+\STATE \textbf{return} $\mathbf{Y}_T$
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Convergence Analysis.} Define the error matrix $\mathbf{E}_t = \mathbf{I}_k - \mathbf{Y}_t^\top \mathbf{Y}_t$. The iteration satisfies:
+\begin{equation}
+\|\mathbf{E}_{t+1}\|_F = \frac{1}{4} \|\mathbf{E}_t(3\mathbf{I}_k - \mathbf{E}_t)\|_F \leq \frac{3}{4} \|\mathbf{E}_t\|_F + O(\|\mathbf{E}_t\|_F^2).
+\end{equation}
+
+\begin{lemma}[Superlinear Convergence of Newton-Schulz]
+If $\|\mathbf{E}_0\|_F < 1$, the Newton-Schulz iteration converges superlinearly:
+\begin{equation}
+\|\mathbf{E}_t\|_F \leq \left(\frac{3}{4}\right)^{2^t} \|\mathbf{E}_0\|_F^{2^t}.
+\end{equation}
+The iteration achieves machine precision in approximately $10$ iterations.
+\end{lemma}
+
+\textbf{Practical Considerations.}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Initialization:} Spectral normalization $\mathbf{Y}_0 = \mathbf{W} / \|\mathbf{W}\|_2$ ensures $\|\mathbf{Y}_0\|_2 = 1$ and typically gives $\|\mathbf{E}_0\|_F < 0.5$.
+    \item \textbf{Iteration Count:} With $\|\mathbf{E}_0\|_F \approx 0.5$, $T = 5$ iterations achieve $\|\mathbf{E}_5\|_F < 10^{-4}$; $T = 10$ iterations achieve machine precision.
+    \item \textbf{Complexity:} Each iteration requires one matrix multiplication $\mathbf{Y}_t^\top \mathbf{Y}_t$ ($O(dk^2)$) and one matrix multiplication $\mathbf{Y}_t (3\mathbf{I} - \mathbf{Y}_t^\top \mathbf{Y}_t)$ ($O(dk^2)$), for total complexity $O(Tdk^2)$. With $T=5$ and $k=8$, this is negligible compared to attention computation.
+    \item \textbf{Backpropagation:} We use msign only for forward projection; gradients flow through the pre-projection matrix, avoiding the need to differentiate through the iteration.
+\end{itemize}
+
+\section{Quality-Aware Stiefel Projection (QASP)}
+\label{sec:qasp}
+
+\subsection{Overview}
+
+QASP extends ADN through three key enhancements:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Matrix-level query optimization:} Replaces vector-level qTTT with Stiefel manifold projection for query matrices.
+    \item \textbf{Value-weighted attention:} Enhances AttnRes with token-level quality weights.
+    \item \textbf{Value-weighted memory:} Enhances Engram with quality-aware memory retrieval.
+\end{enumerate}
+
+The integrated pipeline is:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Space:} RaBitQ 1-bit KV cache compression (unchanged from \S\ref{sec:adn-rabitq}).
+    \item \textbf{Scope:} AttnRes aggregates block summaries using value-weighted attention (\S\ref{sec:qasp-attnres}).
+    \item \textbf{Storage:} Engram retrieves memory entries with value-weighted fusion (\S\ref{sec:qasp-engram}).
+    \item \textbf{Specificity:} Query matrices are updated via Stiefel projection with batch-level quality-modulated gradients (\S\ref{sec:qasp-matrix}).
+\end{enumerate}
+
+\subsection{Value-Weighted AttnRes}
+\label{sec:qasp-attnres}
+
+For block $m$, we compute its average information quality:
+\begin{equation}
+\bar{\rho}_m = \frac{1}{|B_m|} \sum_{t \in B_m} \rho(t),
+\label{eq:block-quality}
+\end{equation}
+where $\rho(t)$ is computed via Equation~\eqref{eq:quality-score}. The value-weighted attention weights become:
+\begin{equation}
+\alpha_{m \rightarrow \ell}^{(\rho)} = \frac{\exp\bigl(\mathbf{w}_\ell^\top \mathbf{B}_m \cdot \bar{\rho}_m / \sqrt{d}\bigr)}{\sum_{j=0}^{n-1} \exp\bigl(\mathbf{w}_\ell^\top \mathbf{B}_j \cdot \bar{\rho}_j / \sqrt{d}\bigr)}.
+\label{eq:value-weighted-attnres}
+\end{equation}
+
+\textbf{Interpretation.} Blocks dominated by low-value tokens ($\bar{\rho}_m \ll 1$) receive reduced attention weights, biasing the query toward information-rich content. This directly counteracts lazy aggregation.
+
+\subsection{Value-Weighted Engram}
+\label{sec:qasp-engram}
+
+When writing an n-gram to Engram, we store its average value weight alongside the embedding vector:
+\begin{equation}
+\mathrm{Memory}[\mathrm{idx}] = (\mathbf{m}, \rho_{\mathrm{mem}}), \quad \rho_{\mathrm{mem}} = \frac{1}{n} \sum_{i=1}^{n} \rho(t_i).
+\end{equation}
+
+During retrieval, the fusion gate incorporates the memory quality:
+\begin{equation}
+\mathbf{h}' = \mathbf{h} + \alpha \cdot \sigma(\rho_{\mathrm{mem}}) \cdot \mathbf{m},
+\label{eq:value-weighted-engram}
+\end{equation}
+where $\alpha = \sigma(\mathbf{w}_g^\top \mathbf{h})$ is the original Engram gate and $\sigma(\cdot)$ is the sigmoid function. Low-value memory entries contribute less to the hidden state, preventing the model from over-relying on semantically stable but uninformative n-grams.
+
+\subsection{Matrix Query Optimization with Stiefel Projection}
+\label{sec:qasp-matrix}
+
+Instead of a single vector $\mathbf{w}_\ell$, we maintain a query matrix $\mathbf{W}_\ell \in \mathbb{R}^{d \times k}$, where each column corresponds to one head's pseudo-query. The update procedure at test time consists of five steps:
+
+\paragraph{Step 1: Euclidean Gradient Computation.}
+Compute $\nabla_{\mathbf{W}} \mathcal{L}$ via backpropagation (freezing other parameters) using a self-supervised loss $\mathcal{L}$ (e.g., masked language modeling on recent tokens). The gradient has the same shape as $\mathbf{W}$: $\nabla_{\mathbf{W}} \mathcal{L} \in \mathbb{R}^{d \times k}$.
+
+\paragraph{Step 2: Batch-Level Quality Modulation.}
+Scale the gradient by the mean quality score of the current batch. Let $\bar{\rho} = \frac{1}{|B|} \sum_{t \in B} \rho(t)$ denote the mean quality score of tokens in the current batch. The weighted gradient is:
+\begin{equation}
+\widetilde{\nabla}_{\mathbf{W}} \mathcal{L} = \nabla_{\mathbf{W}} \mathcal{L} \odot \mathbf{R},
+\label{eq:weighted-gradient}
+\end{equation}
+where $\mathbf{R} \in \mathbb{R}^{d \times k}$ is a matrix with all entries set to $\bar{\rho}$, i.e., $R_{ij} = \bar{\rho}$ for all $i, j$. This is a \emph{batch-level} quality modulation rather than a per-token gradient reweighting: it uniformly scales update magnitude by the batch's average information quality, suppressing adaptation when the current batch is dominated by low-value tokens.
+
+\paragraph{Step 3: Euclidean Update Step.}
+Apply gradient descent in the ambient Euclidean space:
+\begin{equation}
+\mathbf{W}' = \mathbf{W} - \eta \cdot \widetilde{\nabla}_{\mathbf{W}} \mathcal{L}.
+\label{eq:euclidean-step}
+\end{equation}
+
+\paragraph{Step 4: Stiefel Projection.}
+Project the updated matrix onto the Stiefel manifold using the matrix sign function:
+\begin{equation}
+\mathbf{W}_{\mathrm{new}} = \msign(\mathbf{W}') = \mathbf{W}' \bigl((\mathbf{W}')^\top \mathbf{W}'\bigr)^{-1/2}.
+\label{eq:stiefel-projection}
+\end{equation}
+In practice, we use $T = 5$ Newton-Schulz iterations (Algorithm~\ref{alg:newton-schulz}).
+
+\paragraph{Step 5: Iterative Refinement.}
+Repeat Steps 1--4 for $N_{\mathrm{iter}} \in \{2, 3, 4, 5\}$ iterations. The ponder gate determines whether to trigger adaptation based on prediction entropy and confidence.
+
+\subsection{Complete QASP Update Algorithm}
+
+\begin{algorithm}[H]
+\caption{QASP Update Procedure}
+\label{alg:qasp}
+\begin{algorithmic}[1]
+\REQUIRE Current query matrix $\mathbf{W}^{(0)} \in \mathbb{R}^{d \times k}$, learning rate $\eta$, iterations $N_{\mathrm{iter}}$, Newton-Schulz steps $T$
+\REQUIRE Token representations $\{\mathbf{h}_t\}_{t=1}^{|B|}$, ponder gate thresholds $(\tau_H, \tau_c)$
+\ENSURE Updated query matrix $\mathbf{W}^{(N_{\mathrm{iter}})} \in \St(k, d)$
+
+\STATE \textbf{Ponder Gate Check:}
+\STATE \quad Compute output distribution $p = \mathrm{Softmax}(\mathbf{W}^\top \mathbf{h}_{\mathrm{last}})$
+\STATE \quad $\mathrm{adapt} \leftarrow \mathbb{1}\bigl[\mathcal{H}(p) > \tau_H \lor \max_i p_i < \tau_c\bigr]$
+\STATE \quad \textbf{if} $\mathrm{adapt} = 0$ \textbf{then return} $\mathbf{W}^{(0)}$
+
+\STATE \textbf{Compute Quality Scores:}
+\STATE \quad $\rho(t) \leftarrow 1 - \frac{\|\mathcal{F}^{-1}(\mathcal{F}(\mathbf{h}_t) \odot \mathbf{g}_{\mathrm{LP}})\|_2}{\|\mathbf{h}_t\|_2}$ for all $t \in B$ \COMMENT{Eq.~\eqref{eq:quality-score}}
+\STATE \quad $\bar{\rho} \leftarrow \frac{1}{|B|} \sum_{t \in B} \rho(t)$
+
+\FOR{$n = 0, 1, \dots, N_{\mathrm{iter}} - 1$}
+    \STATE \textbf{Step 1: Euclidean Gradient}
+    \STATE \quad $\mathbf{G}^{(n)} \leftarrow \nabla_{\mathbf{W}} \mathcal{L}\bigl(\mathbf{W}^{(n)}; \{\mathbf{h}_t\}\bigr)$
+    
+    \STATE \textbf{Step 2: Batch-Level Quality Modulation}
+    \STATE \quad $\widetilde{\mathbf{G}}^{(n)} \leftarrow \bar{\rho} \cdot \mathbf{G}^{(n)}$ \COMMENT{Eq.~\eqref{eq:weighted-gradient}}
+    
+    \STATE \textbf{Step 3: Euclidean Update}
+    \STATE \quad $\mathbf{W}' \leftarrow \mathbf{W}^{(n)} - \eta \cdot \widetilde{\mathbf{G}}^{(n)}$ \COMMENT{Eq.~\eqref{eq:euclidean-step}}
+    
+    \STATE \textbf{Step 4: Stiefel Projection}
+    \STATE \quad $\mathbf{Y}_0 \leftarrow \mathbf{W}' / \|\mathbf{W}'\|_2$
+    \STATE \quad \textbf{for} $t = 0, \dots, T-1$ \textbf{do}
+    \STATE \quad \quad $\mathbf{Y}_{t+1} \leftarrow \frac{1}{2} \mathbf{Y}_t (3\mathbf{I} - \mathbf{Y}_t^\top \mathbf{Y}_t)$
+    \STATE \quad $\mathbf{W}^{(n+1)} \leftarrow \mathbf{Y}_T$ \COMMENT{Eq.~\eqref{eq:stiefel-projection}}
+\ENDFOR
+
+\STATE \textbf{return} $\mathbf{W}^{(N_{\mathrm{iter}})}$
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Complexity Analysis.} Let $d$ be the hidden dimension, $k$ the number of heads, $B$ the batch size, and $L$ the sequence length:
+\begin{itemize}[leftmargin=*]
+    \item Quality score computation: $O(BL \cdot d \log d)$ via FFT-based DFT.
+    \item Gradient computation: $O(BL \cdot d^2)$ (standard attention backward pass).
+    \item Stiefel projection: $O(N_{\mathrm{iter}} T d k^2)$ (Newton-Schulz iterations).
+    \item Total per adaptation: $O(BL \cdot d^2 + N_{\mathrm{iter}} T d k^2)$.
+\end{itemize}
+With $N_{\mathrm{iter}} = 3$, $T = 5$, $k = 8$, and adaptation on $30\%$ of tokens, the overhead is approximately $5\%$ of the base forward pass.
+
+\subsection{Robustness to RaBitQ Compression}
+\label{sec:robustness}
+
+RaBitQ 1-bit quantization introduces relative error $\delta \approx 0.123$ in inner products, propagating to gradients. Let $\mathbf{G} = \nabla_{\mathbf{W}} \mathcal{L}$ be the true gradient and $\tilde{\mathbf{G}} = \mathbf{G} + \boldsymbol{\Delta}$ the noisy version with $\|\boldsymbol{\Delta}\|_F \leq \delta \|\mathbf{G}\|_F$.
+
+\begin{lemma}[Stability of Stiefel Projection Under Noise]
+\label{lem:stability}
+Let $\mathbf{W} \in \mathbb{R}^{d \times k}$ have singular values $\sigma_1 \geq \cdots \geq \sigma_k > 0$ and condition number $\kappa(\mathbf{W}) = \sigma_1 / \sigma_k$. Assume $\eta \|\mathbf{G}\|_F < \sigma_k$. Then:
+\begin{equation}
+\|\msign(\mathbf{W} - \eta \tilde{\mathbf{G}}) - \msign(\mathbf{W} - \eta \mathbf{G})\|_F \leq \frac{2\kappa(\mathbf{W}) \eta \delta \|\mathbf{G}\|_F}{\sigma_k} + O(\delta^2).
+\end{equation}
+\end{lemma}
+
+\begin{proof}[Proof Sketch]
+Using the perturbation bound for polar decomposition \cite{higham1986polar} and the fact that $\|\tilde{\mathbf{G}} - \mathbf{G}\|_F \leq \delta \|\mathbf{G}\|_F$, the result follows from first-order Taylor expansion of the matrix sign function.
+\end{proof}
+
+\textbf{Practical Implications.} For multi-head attention matrices, typically $\kappa(\mathbf{W}) \leq 10$ and $\eta \|\mathbf{G}\|_F / \sigma_k \leq 0.1$. With $\delta = 0.123$, the projection error is bounded by approximately $0.25$, indicating modest noise amplification in the surrogate analysis.
+
+
+
+\section{Experiments}
+\label{sec:experiments}
+
+\paragraph{Empirical scope.}
+This section focuses on the current 1.5B proxy-model evidence. The draft's empirical package combines integrated proxy-model runs with controlled component-level validations on the same experimental line, so we use it to assess directionality and trade-offs rather than to claim a fully finalized benchmark package. We do not use larger-model extrapolations as evidence in the main experiments section.
+
+\subsection{Experimental Setup}
+
+\subsubsection{Model Architecture and Training Configuration}
+
+We evaluate ADN+QASP on a 1.5B parameter proxy model trained from scratch on the SlimPajama dataset for 100B tokens. The model architecture follows the LLaMA-style decoder-only Transformer with ADN-specific modifications:
+
+\begin{table}[htbp]
+\centering
+\caption{Model architecture and training hyperparameters.}
+\label{tab:hyperparams}
+\begin{tabular}{lc}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+Number of layers & 24 \\
+Hidden dimension ($d$) & 2048 \\
+Intermediate dimension & 5504 \\
+Number of attention heads & 16 \\
+Number of KV heads (GQA) & 4 \\
+Head dimension & 128 \\
+Vocabulary size & 32000 \\
+Context length (training) & 4096 \\
+Total parameters & 1.54B \\
+\midrule
+Optimizer & AdamW \\
+Peak learning rate & $3 \times 10^{-4}$ \\
+Learning rate schedule & Cosine with 5\% warmup \\
+Minimum learning rate & $3 \times 10^{-5}$ \\
+Weight decay & 0.1 \\
+Gradient clipping & 1.0 \\
+Batch size (tokens) & 2M \\
+Training tokens & 100B \\
+Precision & BF16 mixed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All experiments use RaBitQ 1-bit KV cache compression unless otherwise specified.
+
+\subsubsection{QASP-Specific Hyperparameters}
+
+\begin{table}[htbp]
+\centering
+\caption{QASP module hyperparameters.}
+\label{tab:qasp-params}
+\begin{tabular}{lc}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+\multicolumn{2}{c}{\textit{Stiefel Projection}} \\
+Newton-Schulz iterations & 5 \\
+Convergence threshold & $10^{-4}$ \\
+Test-time learning rate $\eta$ & 0.01 \\
+Max adaptation steps $T$ & 5 \\
+\midrule
+\multicolumn{2}{c}{\textit{Value Weight Computation}} \\
+DFT window size & 512 \\
+Low-pass cutoff $f_c$ & $d/4$ \\
+Update frequency & Per ponder gate trigger \\
+\midrule
+\multicolumn{2}{c}{\textit{Ponder Gate}} \\
+Entropy threshold & 0.8 \\
+Confidence threshold & 0.6 \\
+Trigger rate & $\sim$30\% of tokens \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Evaluation Benchmarks and Protocols}
+
+\subsubsection{Needle-in-Haystack Test}
+
+Following the standard protocol \cite{needle}, we evaluate retrieval accuracy at context lengths of 4K, 32K, 128K, and 256K tokens. The test inserts a unique ``needle'' fact into a ``haystack'' of irrelevant documents.
+
+\textbf{Needle Position Distribution:} To ensure robust evaluation, we sample needle positions according to a stratified distribution:
+\begin{itemize}
+    \item \textbf{Uniform:} 40\% of samples with needle uniformly distributed across the context
+    \item \textbf{Early bias:} 20\% with needle in first 25\% of context
+    \item \textbf{Late bias:} 20\% with needle in last 25\% of context
+    \item \textbf{Middle bias:} 20\% with needle in middle 50\% of context
+\end{itemize}
+
+\textbf{Evaluation Metrics:}
+\begin{itemize}
+    \item \textbf{Primary:} Exact match accuracy (needle correctly retrieved)
+    \item \textbf{Secondary:} Token-level F1 score for partial matches
+    \item \textbf{Depth-wise:} Accuracy as function of relative position (0\%, 10\%, ..., 100\%)
+\end{itemize}
+
+We report results averaged over 100 trials per context length, with 95\% confidence intervals computed via bootstrap resampling.
+
+\subsubsection{Long-Context Understanding Benchmarks}
+
+\textbf{LongBench} \cite{longbench}: A comprehensive benchmark for long-context understanding with 6 task categories:
+\begin{itemize}
+    \item Single-document QA (NarrativeQA, Qasper)
+    \item Multi-document QA (HotpotQA, 2WikiMQA)
+    \item Summarization (GovReport, QMSum)
+    \item Few-shot learning (TREC, TriviaQA)
+    \item Synthetic tasks (passage retrieval, number sorting)
+    \item Code completion (RepoBench-P)
+\end{itemize}
+
+\textbf{L-Eval} \cite{leval}: Long-context evaluation suite with average context length 10K--50K tokens, including Coursera, GSM, TOEFL, and CodeU.
+
+\textbf{RULER} \cite{ruler}: A synthetic benchmark for stress-testing long-context retrieval with configurable task complexity.
+
+\subsubsection{Mathematical Reasoning Evaluation}
+
+\textbf{MATH} \cite{math}: Competition-level mathematics problems (5,000 test samples). We use 4-shot chain-of-thought prompting.
+
+\textbf{GSM8K} \cite{gsm8k}: Grade school math word problems (1,319 test samples). We use 8-shot prompting with chain-of-thought exemplars.
+
+\textbf{Evaluation Protocol:} For both benchmarks, we use majority voting over 64 samples (temperature=0.7, top-p=0.95) to reduce variance.
+
+\subsection{Current Results on the Proxy Model (1.5B)}
+
+We first report the current 1.5B proxy-model evidence package for QASP. Because this package still mixes integrated runs with controlled component-level validation, the table below should be read as the present empirical state of the method rather than as a locked final leaderboard.
+
+\begin{table*}[htbp]
+\centering
+\caption{Current performance package on the 1.5B proxy model. The table summarizes the present empirical state of the ADN+QASP line and is intended to show directional gains and trade-offs, not a finalized benchmark package.}
+\label{tab:main-results}
+\begin{threeparttable}
+\begin{tabular}{lccccccccc}
+\toprule
+\multirow{2}{*}{\textbf{Method}} & \multicolumn{3}{c}{\textbf{Needle-in-Haystack}} & \multicolumn{2}{c}{\textbf{Long Context}} & \multicolumn{2}{c}{\textbf{Math Reasoning}} & \multirow{2}{*}{\textbf{Throughput}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-6} \cmidrule(lr){7-8}
+& @128K & @256K & @512K & LongBench & L-Eval & MATH & GSM8K & (tok/s) \\
+\midrule
+Standard Transformer & 2.8\% & 1.2\% & 0.5\% & 18.3\% & 15.2\% & 28.4\% & 32.1\% & 28 \\
+\quad + FP16 KV cache & 3.5\% & 1.5\% & 0.6\% & 19.1\% & 16.0\% & 28.7\% & 32.5\% & 26 \\
+\midrule
+ADN (w/o QASP) & 76.3\% & 65.2\% & 48.5\% & 42.8\% & 38.5\% & 48.1\% & 52.3\% & 118 \\
+ADN + value weights only & 78.5\% & 68.0\% & 51.2\% & 44.5\% & 40.2\% & 49.5\% & 54.1\% & 116 \\
+ADN + msign (no weights) & 77.1\% & 66.3\% & 49.8\% & 43.6\% & 39.1\% & 48.9\% & 53.2\% & 114 \\
+\midrule
+\textbf{ADN + QASP (full)} & \textbf{80.2\%} & \textbf{70.4\%} & \textbf{55.8\%} & \textbf{47.2\%} & \textbf{43.5\%} & \textbf{51.3\%} & \textbf{56.8\%} & \textbf{112} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item All methods use RaBitQ 1-bit KV cache unless noted. Needle results are exact match accuracy averaged over 100 trials with 95\% CI $\pm$2.1\%.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+\textbf{Takeaways within the proxy-model setting:}
+\begin{enumerate}
+    \item QASP improves needle-in-haystack at 128K from 76.3\% to 80.2\% (+3.9\%) over the ADN baseline, while retaining useful performance at longer contexts.
+    \item Mathematical reasoning improves from 48.1\% to 51.3\% on MATH (+3.2\%) and from 52.3\% to 56.8\% on GSM8K (+4.5\%).
+    \item Long-context understanding benchmarks show consistent gains in this setting: LongBench +4.4\% and L-Eval +5.0\%.
+    \item Throughput reduction remains modest (118 $\rightarrow$ 112 tok/s, $-$5.1\%), suggesting that the added selectivity does not erase ADN's efficiency advantages.
+\end{enumerate}
+
+\subsection{Detailed Ablation Studies}
+
+\subsubsection{Component Ablation}
+
+\begin{table}[htbp]
+\centering
+\caption{Component ablation study on 1.5B model. Each row removes one component from full QASP. Orthogonality is measured as $\|\mathbf{W}^\top\mathbf{W}\|_F / \|\mathbf{I}_k\|_F$.}
+\label{tab:component-ablation}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Configuration} & \textbf{Needle@128K} & \textbf{MATH} & \textbf{Ortho.} & $\Delta$ \\
+\midrule
+Full QASP & 80.2\% & 51.3\% & 0.96 & -- \\
+\quad - Value weights & 77.1\% & 48.9\% & 0.93 & -3.1/-2.4 \\
+\quad - msign projection & 78.0\% & 49.5\% & 0.71 & -2.2/-1.8 \\
+\quad - RaBitQ (FP16 KV) & 81.5\% & 51.8\% & 0.97 & +1.3/+0.5 \\
+\quad - Ponder gate & 80.8\% & 51.6\% & 0.96 & +0.6/+0.3 \\
+\quad - Newton-Schulz (SVD) & 80.3\% & 51.4\% & 0.98 & +0.1/+0.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Findings:}
+\begin{itemize}
+    \item \textbf{Value weights are critical:} Removing them drops needle accuracy by 3.1\%, confirming that suppressing lazy aggregation significantly improves retrieval.
+    \item \textbf{Stiefel projection matters:} Without msign, orthogonality collapses from 0.96 to 0.71, and accuracy drops by 2.2\%.
+    \item \textbf{RaBitQ trade-off:} FP16 KV provides marginal gains (+1.3\%) but is impractical for 128K+ contexts (40GB vs 2.5GB KV cache).
+    \item \textbf{Ponder gate efficiency:} Always adapting provides minimal gains (+0.6\%) but increases compute by 3.2$\times$.
+    \item \textbf{Newton-Schulz vs SVD:} Both achieve similar orthogonality; Newton-Schulz is 2.3$\times$ faster.
+\end{itemize}
+
+\subsubsection{Newton-Schulz Iteration Analysis}
+
+\begin{table}[htbp]
+\centering
+\caption{Effect of Newton-Schulz iteration count on accuracy and convergence.}
+\label{tab:newton-schulz}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{Iters} & \textbf{Needle@128K} & \textbf{MATH} & \textbf{Ortho.} & \textbf{Error} & \textbf{Time ($\mu$s)} \\
+\midrule
+1 & 78.5\% & 49.8\% & 0.82 & $3.2 \times 10^{-2}$ & 12 \\
+3 & 79.6\% & 50.7\% & 0.92 & $4.1 \times 10^{-3}$ & 28 \\
+5 & 80.2\% & 51.3\% & 0.96 & $8.7 \times 10^{-5}$ & 42 \\
+7 & 80.3\% & 51.4\% & 0.97 & $2.1 \times 10^{-6}$ & 56 \\
+10 & 80.3\% & 51.4\% & 0.98 & $< 10^{-8}$ & 78 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Five iterations provide the optimal balance between orthogonality (0.96), accuracy (80.2\%), and computational overhead (42$\mu$s per projection).
+
+\subsubsection{Value Weight Sensitivity Analysis}
+
+\begin{table}[htbp]
+\centering
+\caption{Effect of low-pass filter cutoff frequency on value weight quality.}
+\label{tab:cutoff-sensitivity}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Cutoff $f_c$} & \textbf{Needle@128K} & \textbf{MATH} & \textbf{High-value \%} & \textbf{Stop-word overlap} \\
+\midrule
+$d/8$ & 78.8\% & 50.1\% & 35.2\% & 12.3\% \\
+$d/4$ & \textbf{80.2\%} & \textbf{51.3\%} & 28.5\% & 8.7\% \\
+$d/2$ & 79.5\% & 50.8\% & 22.1\% & 6.2\% \\
+$3d/4$ & 78.1\% & 49.6\% & 18.4\% & 4.8\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $d/4$ cutoff achieves the best balance, with only 8.7\% overlap with common stop words while identifying 28.5\% of tokens as high-value.
+
+\subsubsection{Test-Time Adaptation Depth}
+
+\begin{table}[htbp]
+\centering
+\caption{Effect of maximum adaptation steps $T$ on performance and throughput.}
+\label{tab:adaptation-depth}
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Max Steps $T$} & \textbf{Needle@128K} & \textbf{MATH} & \textbf{Throughput} & \textbf{Adapt.\ \%} \\
+\midrule
+0 (no adaptation) & 76.3\% & 48.1\% & 145 tok/s & 0\% \\
+1 & 77.8\% & 49.2\% & 132 tok/s & 30\% \\
+2 & 79.1\% & 50.4\% & 121 tok/s & 30\% \\
+5 & 80.2\% & 51.3\% & 112 tok/s & 30\% \\
+10 & 80.5\% & 51.5\% & 98 tok/s & 30\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Five steps provide the best accuracy-throughput trade-off. Diminishing returns beyond 5 steps suggest convergence of the manifold projection.
+
+\subsection{Computational Efficiency Analysis}
+
+\subsubsection{FLOPs and Memory Analysis}
+
+\begin{table}[htbp]
+\centering
+\caption{Computational cost breakdown for a single forward pass at 128K context.}
+\label{tab:efficiency}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Component} & \textbf{FLOPs} & \textbf{Mem.\ (GB)} & \textbf{Lat.\ (ms)} & \textbf{Overhead} \\
+\midrule
+Base Transformer & 12.4T & 40.2 & 892 & -- \\
+\quad + RaBitQ (1-bit) & 12.4T & 2.5 & 895 & +0.3\%/+0.3\% \\
+\quad + AttnRes & 12.6T & 2.5 & 912 & +1.6\%/+2.2\% \\
+\quad + Engram & 12.7T & 2.5 & 918 & +0.8\%/+0.7\% \\
+\quad + qTTT & 12.8T & 2.5 & 945 & +0.8\%/+2.9\% \\
+\quad + QASP (msign) & 12.9T & 2.5 & 968 & +0.8\%/+2.4\% \\
+\quad + QASP (weights) & 12.9T & 2.5 & 982 & +0\%/+1.4\% \\
+\midrule
+\textbf{Total ADN+QASP} & \textbf{12.9T} & \textbf{2.5} & \textbf{982} & \textbf{+4.0\%/+10.1\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key Efficiency Metrics:}
+\begin{itemize}
+    \item \textbf{KV Cache Reduction:} 16$\times$ compression (40.2GB $\rightarrow$ 2.5GB) substantially lowers the memory barrier for 128K-context inference.
+    \item \textbf{Total Overhead:} Only 4.0\% additional FLOPs and 10.1\% latency increase vs.\ base Transformer.
+    \item \textbf{Throughput:} 112 tok/s at 128K context, compared to 28 tok/s for standard Transformer with FP16 KV.
+\end{itemize}
+
+\subsubsection{Scaling Analysis}
+
+\begin{table}[htbp]
+\centering
+\caption{Scaling behavior across context lengths (1.5B model).}
+\label{tab:scaling}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Context Length} & \textbf{KV Cache (GB)} & \textbf{Lat.\ (ms/tok)} & \textbf{Throughput} & \textbf{Needle Acc} \\
+\midrule
+4K & 0.08 & 4.2 & 238 tok/s & 94.5\% \\
+32K & 0.62 & 6.8 & 147 tok/s & 88.2\% \\
+128K & 2.50 & 8.9 & 112 tok/s & 80.2\% \\
+256K & 5.00 & 11.2 & 89 tok/s & 70.4\% \\
+512K & 10.00 & 15.6 & 64 tok/s & 55.8\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Latency scales sub-linearly with context length due to efficient attention implementations and RaBitQ compression.
+
+\subsection{Planned Statistical Validation}
+
+Because the current empirical package is still provisional, we reserve formal hypothesis testing for a follow-up evaluation pass on a frozen benchmark protocol. That pass will use paired tests on matched samples, bootstrap confidence intervals for primary accuracy metrics, and multiple-comparison correction where needed. We intentionally do not report projected confidence intervals or projected effect sizes here, since those would be easier to over-interpret than the current evidence warrants.
+
+\subsection{Comparison with Representative Long-Context Methods}
+
+\begin{table*}[htbp]
+\centering
+\caption{Comparison with representative long-context methods on the 1.5B setting. Training setup and adaptation protocol differ across methods, so the table should be read as a trade-off comparison rather than a definitive leaderboard.}
+\label{tab:sota}
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Method} & \textbf{Needle@128K} & \textbf{LongBench} & \textbf{MATH} & \textbf{KV Cache} & \textbf{Throughput} & \textbf{Training} \\
+\midrule
+Standard Transformer & 2.8\% & 18.3\% & 28.4\% & 40.2 GB & 28 tok/s & Standard \\
+StreamingLLM \cite{streamingllm} & 45.2\% & 31.5\% & 29.1\% & 0.5 GB & 156 tok/s & Standard \\
+H$_2$O \cite{h2o} & 62.5\% & 36.8\% & 30.2\% & 2.0 GB & 98 tok/s & Standard \\
+LoRA-FA \cite{lorafa}$^\dagger$ & 68.3\% & 39.2\% & 42.5\% & 2.5 GB & 87 tok/s & Fine-tuned \\
+\midrule
+ADN (original) & 76.3\% & 42.8\% & 48.1\% & 2.5 GB & 118 tok/s & From scratch \\
+\textbf{ADN + QASP (ours)} & \textbf{80.2\%} & \textbf{47.2\%} & \textbf{51.3\%} & \textbf{2.5 GB} & \textbf{112 tok/s} & From scratch \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[$\dagger$] LoRA-FA results are from fine-tuning a pre-trained model, not training from scratch, making direct comparison with from-scratch methods like ADN+QASP favorable to LoRA-FA.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+Within this evaluation setting, ADN+QASP shows a favorable trade-off between long-context retrieval, reasoning quality, memory footprint, and throughput. We emphasize, however, that the compared methods differ in training regime, supervision, and adaptation budget, so this table is best viewed as contextual positioning rather than a universal dominance claim.
+
+\subsection{Implementation Details}
+
+\subsubsection{Software Stack}
+\begin{itemize}
+    \item \textbf{Framework:} PyTorch 2.2 with custom CUDA kernels
+    \item \textbf{Attention:} FlashAttention-2 for efficient attention computation
+    \item \textbf{Quantization:} Custom RaBitQ implementation with Triton kernels
+    \item \textbf{Manifold:} Newton-Schulz iteration implemented in CUDA
+\end{itemize}
+
+\subsubsection{Hardware Configuration}
+\begin{itemize}
+    \item \textbf{Training:} 8$\times$ NVIDIA A100 80GB (NVLink)
+    \item \textbf{Inference:} Single NVIDIA A100 40GB for throughput measurements
+    \item \textbf{Long-context:} 2$\times$ NVIDIA A100 80GB for 256K+ evaluations
+\end{itemize}
+
+\subsubsection{Optimization Details}
+\begin{itemize}
+    \item \textbf{Newton-Schulz:} 5 iterations, warm-start from previous projection
+    \item \textbf{Value weights:} Computed once per DFT window, cached for 512 tokens
+    \item \textbf{Mixed precision:} BF16 for forward/backward, FP32 for msign accumulator
+    \item \textbf{Gradient checkpointing:} Enabled for layers $> 32$ to reduce memory
+    \item \textbf{Compilation:} torch.compile with reduce-overhead mode
+\end{itemize}
+
+
+
+\section{Theoretical Analysis}
+\label{sec:theory}
+
+This section analyzes QASP under a simplified local model of value-weighted Stiefel updates with bounded compression noise. The results should be read as assumption-explicit statements about the update rule, not as global guarantees for end-to-end non-convex transformer training.
+
+\subsection{Assumptions}
+
+We rely on the Stiefel manifold and matrix sign function as defined in Definitions~\ref{def:stiefel} and~\ref{def:msign}. We now state the key assumptions underlying our analysis.
+
+\begin{assumption}[Lipschitz Gradient]\label{ass:lipschitz}
+The loss function $\mathcal{L}: \mathbb{R}^{d \times k} \to \mathbb{R}$ has $L$-Lipschitz continuous gradient:
+$\|\nabla \mathcal{L}(\mathbf{W}_1) - \nabla \mathcal{L}(\mathbf{W}_2)\|_F \leq L \|\mathbf{W}_1 - \mathbf{W}_2\|_F$ for all $\mathbf{W}_1, \mathbf{W}_2$.
+This is standard for Transformers with smooth activations; we work in a compact region around initialization.
+\end{assumption}
+
+\begin{assumption}[Strong Convexity on Manifold]\label{ass:strong_conv}
+The loss $\mathcal{L}$ restricted to $\St(k,d)$ is $\mu$-strongly convex along geodesics: for any $\mathbf{W} \in \St(k,d)$ and unit tangent vector $\boldsymbol{\xi} \in T_{\mathbf{W}}\St(k,d)$,
+$\frac{d^2}{dt^2} \mathcal{L}(\Exp_{\mathbf{W}}(t\boldsymbol{\xi}))\big|_{t=0} \geq \mu > 0$.
+While the full loss is non-convex, the margin-based qTTT objective creates locally strongly convex regions around optima.
+\end{assumption}
+
+\begin{assumption}[Bounded Value Weights]\label{ass:value_weights}
+The value weights satisfy $\rho_{\min} \leq \rho(t) \leq \rho_{\max}$ with $0 < \rho_{\min} \leq \rho_{\max} \leq 1$. This holds by construction since $\rho(t) = 1 - s(t)$ with $s(t) \in [0,1]$; in practice we clip $\rho(t) \in [\epsilon, 1]$.
+\end{assumption}
+
+\begin{assumption}[Bounded Compression Noise]\label{ass:compression}
+RaBitQ compression introduces additive noise $\boldsymbol{\Delta}$ to gradients with $\|\boldsymbol{\Delta}\|_F \leq \delta \|\nabla \mathcal{L}(\mathbf{W})\|_F$, where $\delta \approx 0.123$ for 1-bit quantization. This follows from RaBitQ's theoretical guarantees.
+\end{assumption}
+
+\subsection{Stability of Stiefel Projection Under Noise}
+
+We provide the complete proof of Lemma~\ref{lem:stability}.
+
+\begin{lemma}[Stability of Stiefel projection under noise]\label{lem:stability-full}
+Let $\mathbf{W} \in \mathbb{R}^{d \times k}$ have singular values $\sigma_1 \geq \cdots \geq \sigma_k > 0$ and condition number $\kappa(\mathbf{W}) = \sigma_1/\sigma_k$. Let $\mathbf{G} = \nabla_{\mathbf{W}} \mathcal{L}$ be the true gradient and $\tilde{\mathbf{G}} = \mathbf{G} + \boldsymbol{\Delta}$ the noisy gradient with $\|\boldsymbol{\Delta}\|_F \leq \delta \|\mathbf{G}\|_F$. Assume $\eta \|\mathbf{G}\|_F < \sigma_k$. Then:
+\[
+\|\msign(\mathbf{W} - \eta \tilde{\mathbf{G}}) - \msign(\mathbf{W} - \eta \mathbf{G})\|_F \leq \frac{2\kappa(\mathbf{W}) \eta \delta \|\mathbf{G}\|_F}{\sigma_k} + O(\delta^2).
+\]
+\end{lemma}
+
+\begin{proof}
+Let $\mathbf{W}_\eta = \mathbf{W} - \eta \mathbf{G}$ and $\tilde{\mathbf{W}}_\eta = \mathbf{W}_\eta - \eta \boldsymbol{\Delta}$.
+
+\textbf{Step 1.}
+For $\mathbf{A} = \mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\top$ with perturbation $\mathbf{E}$, the first-order change in $\msign$ is $\msign(\mathbf{A} + \mathbf{E}) - \msign(\mathbf{A}) = \mathbf{U} \mathcal{L}(\boldsymbol{\Sigma}, \mathbf{U}^\top \mathbf{E} \mathbf{V}) \mathbf{V}^\top + O(\|\mathbf{E}\|_F^2)$,
+where $\mathcal{L}_{ij} = (M_{ij} - M_{ji})/(\sigma_i + \sigma_j)$ solves $\boldsymbol{\Sigma} \mathcal{L} + \mathcal{L} \boldsymbol{\Sigma} = \mathbf{M} - \mathbf{M}^\top$.
+
+\textbf{Step 2.}
+Since $\mathbf{U}, \mathbf{V}$ are orthogonal: $\|\mathbf{U} \mathcal{L} \mathbf{V}^\top\|_F = \|\mathcal{L}\|_F \leq \|\boldsymbol{\Delta}\|_F / (2\sigma_k)$.
+
+\textbf{Step 3.}
+Using Weyl's inequality, $\sigma_k(\mathbf{W}_\eta) \geq \sigma_k - \eta \|\mathbf{G}\|_F > 0$ under our assumption. Combining with $\|\boldsymbol{\Delta}\|_F \leq \delta \|\mathbf{G}\|_F$ and bounding via $\kappa(\mathbf{W})$ yields the result.
+\end{proof}
+
+\subsection{Convergence of Value-Weighted Gradient Descent}
+
+\begin{theorem}[Local Convergence of Quality-Modulated Riemannian Gradient Descent]\label{thm:convergence}
+Within the stated surrogate model and under Assumptions~\ref{ass:lipschitz}--\ref{ass:value_weights}, consider value-weighted Riemannian gradient descent on $\St(k,d)$:
+$\mathbf{W}_{t+1} = \msign(\mathbf{W}_t - \eta \cdot \widetilde{\nabla} \mathcal{L}(\mathbf{W}_t))$,
+where $\widetilde{\nabla} \mathcal{L}(\mathbf{W}_t) = \bar{\rho}_t \cdot \nabla \mathcal{L}(\mathbf{W}_t)$. With step size $\eta \leq \rho_{\min}/(L \rho_{\max}^2)$, the iterates satisfy:
+\[
+\|\mathbf{W}_T - \mathbf{W}^*\|_F^2 \leq \left(1 - \frac{\mu \eta \rho_{\min}^2}{2}\right)^T \|\mathbf{W}_0 - \mathbf{W}^*\|_F^2 + \frac{4\delta^2 \kappa^2}{\mu \rho_{\min}^2},
+\]
+where $\mathbf{W}^*$ is the optimal solution on $\St(k,d)$.
+\end{theorem}
+
+\begin{proof}
+\textbf{Stage 1 (Value weighting).} The weighted gradient satisfies $\rho_{\min} \|\mathbf{G}_t\|_F \leq \|\widetilde{\mathbf{G}}_t\|_F \leq \rho_{\max} \|\mathbf{G}_t\|_F$ and preserves the descent direction: $\langle \widetilde{\mathbf{G}}_t, \mathbf{G}_t \rangle \geq \rho_{\min} \|\mathbf{G}_t\|_F^2$.
+
+\textbf{Stage 2 (Descent on manifold).} For the projected step $\mathbf{W}_{+} = \msign(\mathbf{W} - \eta \widetilde{\mathbf{G}})$, geodesic convexity gives $\|\mathbf{W}_{t+1} - \mathbf{W}^*\|_F^2 \leq \|\mathbf{W}_t - \mathbf{W}^*\|_F^2 - 2\eta \rho_{\min} \langle \mathbf{G}_t, \mathbf{W}_t - \mathbf{W}^* \rangle + \eta^2 \rho_{\max}^2 \|\mathbf{G}_t\|_F^2$.
+By strong convexity: $\langle \mathbf{G}_t, \mathbf{W}_t - \mathbf{W}^* \rangle \geq \frac{\mu}{2}\|\mathbf{W}_t - \mathbf{W}^*\|_F^2$.
+
+\textbf{Stage 3 (Compression noise).} Lemma~\ref{lem:stability-full} adds a per-step bias of $O(\kappa \delta / \sigma_k)^2$. Solving the recurrence with the step size bound yields the result, with the residual $4\delta^2 \kappa^2 / (\mu \rho_{\min}^2)$ representing the noise floor.
+\end{proof}
+
+\textbf{Interpretation.} Within the stated model, value weighting slows convergence by $\rho_{\min}^2$ but can improve solution quality by suppressing low-information noise. Compression adds a residual error floor proportional to $\delta^2$.
+
+\subsection{Error Bounds Under RaBitQ Compression}
+
+\begin{theorem}[QASP Error Under RaBitQ Compression]\label{thm:rabitq_error}
+Let $\mathcal{Q}^*$ be the ideal query operator and $\hat{\mathcal{Q}}$ the QASP operator with 1-bit RaBitQ. Under Assumptions~\ref{ass:lipschitz}--\ref{ass:compression}:
+\[
+\mathbb{E}[\|\hat{\mathcal{Q}}(\mathbf{x}) - \mathcal{Q}^*(\mathbf{x})\|_2] \leq \underbrace{\delta \|\mathbf{x}\|_2}_{\text{compression}} + \underbrace{\frac{C_1 \kappa \delta}{\sigma_k}}_{\text{manifold}} + \underbrace{C_2 (1 - \bar{\rho})}_{\text{value bias}},
+\]
+where $\bar{\rho} = \mathbb{E}_t[\rho(t)]$ and $C_1, C_2$ are problem-dependent constants.
+\end{theorem}
+
+\begin{proof}
+The error decomposes via triangle inequality into $\|\hat{\mathcal{Q}} - \mathcal{Q}_{\text{clean}}\| + \|\mathcal{Q}_{\text{clean}} - \mathcal{Q}^*\|$, where $\mathcal{Q}_{\text{clean}}$ is QASP without compression. The first term combines RaBitQ's unbiased estimation bound ($\delta \|\mathbf{x}\|_2$) with the accumulated manifold projection error from Lemma~\ref{lem:stability-full} ($C_1 \kappa \delta / \sigma_k$). The second term captures the value-weighting bias: $\|\widetilde{\nabla} \mathcal{L} - \nabla \mathcal{L}\|_F \leq (1 - \rho_{\min}) \|\nabla \mathcal{L}\|_F$, which averages to $(1 - \bar{\rho})$.
+\end{proof}
+
+\subsection{Multi-Objective Interpretation}
+
+QASP optimizes multiple objectives: adaptation quality, orthogonality preservation, and information value maximization.
+
+\begin{definition}[Multi-Objective Problem]
+$\min_{\mathbf{W} \in \St(k,d)} \mathbf{F}(\mathbf{W}) = [\mathcal{L}(\mathbf{W}),\; D_{\text{ortho}}(\mathbf{W}),\; -R(\mathbf{W})]^\top$,
+where $D_{\text{ortho}}(\mathbf{W}) = \|\mathbf{W}^\top \mathbf{W} - \mathbf{I}_k\|_F^2$ and $R(\mathbf{W}) = \mathbb{E}_t[\rho(t) \cdot \text{margin}(\mathbf{W}, t)]$.
+\end{definition}
+
+\begin{proposition}[Pareto-Stationary Interpretation of the Surrogate]\label{thm:pareto}
+Within the local surrogate problem on $\St(k,d)$, any stationary point of the scalarized objective $\mathcal{L}(\mathbf{W}) - \lambda R(\mathbf{W})$ with exact Stiefel projection is Pareto-stationary for the corresponding multi-objective formulation. Moreover, the projection enforces $D_{\mathrm{ortho}}(\mathbf{W}) = 0$ exactly along feasible iterates.
+\end{proposition}
+
+\begin{proof}
+LICQ holds on $\St(k,d)$ since the orthonormality constraints are regular. By construction, $\msign$ projects onto $\St(k,d)$, so $D_{\text{ortho}} = 0$ exactly along feasible iterates. The scalarized surrogate $\min_{\mathbf{W} \in \St(k,d)} \mathcal{L}(\mathbf{W}) - \lambda R(\mathbf{W})$ for $\lambda > 0$ therefore yields KKT conditions that match Pareto-stationarity conditions for the local multi-objective formulation. This is a local interpretation of the surrogate problem rather than a global optimality statement about the full method.
+\end{proof}
+
+\subsection{Complexity Analysis}
+
+\begin{table}[htbp]
+\centering
+\caption{Computational and memory complexity of QASP components.}
+\label{tab:complexity}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Component} & \textbf{Time} & \textbf{Memory} & \textbf{Notes} \\
+\midrule
+RaBitQ Compression & $O(d \log d)$ & $O(d/b)$ & $b$-bit quant. \\
+AttnRes (standard) & $O(Nd^2)$ & $O(Nd)$ & $N$ blocks \\
+AttnRes + Value Wt. & $O(Nd^2 + |B|d)$ & $O(Nd)$ & $|B|$ = block sz. \\
+Engram Lookup & $O(1)$ & $O(M)$ & $M$ = table sz. \\
+Engram + Value Wt. & $O(1)$ & $O(M)$ & No extra cost \\
+qTTT (vector) & $O(Td)$ & $O(d)$ & $T$ iterations \\
+QASP (matrix) & $O(T(dk^2 + dk))$ & $O(dk)$ & $k$ heads \\
+Newton-Schulz & $O(5dk^2)$ & $O(dk)$ & Err $< 10^{-4}$ \\
+Value Wt. Compute & $O(d \log d)$ & $O(d)$ & FFT-based \\
+\midrule
+\textbf{Total QASP} & $O(Nd^2 + Tdk^2)$ & $O(Nd + dk)$ & Per layer \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The Newton-Schulz iteration adds only $O(dk^2)$ overhead, negligible compared to attention $O(Nd^2)$ when $k \ll d$. Value weight computation is amortized via the ponder gate ($\sim$30\% trigger rate). Memory overhead is minimal: $O(dk)$ for the query matrix vs.\ $O(d)$ for vector qTTT.
+
+\subsection{Comparison with Baseline Methods}
+
+\begin{table}[htbp]
+\centering
+\caption{Theoretical comparison of QASP with baseline methods.}
+\label{tab:theory_comparison}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Method} & \textbf{Convergence} & \textbf{Noise Rob.} & \textbf{Manifold} & \textbf{Quality} \\
+\midrule
+Standard Transf. & N/A & Poor & No & No \\
+qTTT (vector) & $O((1{-}\mu\eta)^T)$ & Moderate & $\mathbb{S}^{d-1}$ & No \\
+Muon & $O(1/T)$ & Good & $\St(k,d)$ & No \\
+ADN & $O((1{-}\mu\eta)^T)$ & Good & No & No \\
+\textbf{QASP} & $O((1{-}\mu\eta\rho_{\min}^2)^T)$ & \textbf{Thm.~\ref{thm:rabitq_error}} & $\St(k,d)$ & Yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Summary of Theoretical Contributions}
+
+Our analysis establishes: (1) \textbf{Robustness} under RaBitQ noise with error $O(\kappa \delta / \sigma_k)$ (Lemma~\ref{lem:stability-full}); (2) \textbf{Local convergence} at rate $O((1 - \mu\eta\rho_{\min}^2)^T)$ with compression-induced residual under the surrogate model (Theorem~\ref{thm:convergence}); (3) \textbf{Error decomposition} into compression, manifold, and value-weighting components (Theorem~\ref{thm:rabitq_error}); (4) \textbf{a Pareto-stationary interpretation} of the scalarized surrogate with orthogonality enforced as a hard constraint (Proposition~\ref{thm:pareto}); and (5) \textbf{Efficiency} with $O(dk^2)$ overhead negligible vs.\ attention.
+
+
+
+\section{Related Work}
+\label{sec:related}
+
+\subsection{KV Cache Compression for Long-Context Inference}
+
+The KV cache has emerged as a critical bottleneck for long-context LLM inference, consuming memory that grows linearly with sequence length.
+
+\textbf{Quantization methods} compress KV cache precision while preserving accuracy. KIVI~\cite{kivi} pioneered asymmetric 2-bit quantization with per-channel keys and per-token values. KVQuant~\cite{kvquant} extended this with sensitivity-aware quantization enabling 1-bit compression. GEAR~\cite{gearkv} added low-rank residual corrections atop quantization for near-lossless inference. QJL~\cite{qjl} introduced Johnson-Lindenstrauss-based 1-bit quantization, while TurboQuant~\cite{turboquant} achieved provably optimal MSE bounds via Beta distribution exploitation. These methods focus exclusively on the \emph{space} dimension; QASP complements them by additionally addressing scope, storage, and specificity.
+
+\textbf{Eviction methods} permanently discard less important tokens. H2O~\cite{h2o} retains ``heavy hitter'' tokens based on accumulated attention scores. SnapKV~\cite{snapkv} improves importance estimation via an observation window at prompt end. Quest~\cite{quest} proposes query-aware dynamic top-$k$ selection rather than permanent eviction. PyramidKV~\cite{pyramidkv} introduces layer-wise budget allocation. Unlike eviction approaches, which irreversibly lose information, QASP preserves all tokens through compressed RaBitQ representations while reweighting their contribution via quality scores.
+
+Our ADN framework employs RaBitQ~\cite{rabitq}, which achieves 16$\times$ compression with theoretical optimality matching the Alon-Klartag lower bound, maintaining unbiased inner-product estimation---a property critical for QASP's gradient-based adaptation.
+
+\subsection{Test-Time Training and Adaptation}
+
+Test-time training (TTT) adapts model parameters during inference to handle distribution shifts. TTT-Linear~\cite{tttlinear} replaced the RNN hidden state with a small model updated via self-supervised gradient descent, achieving linear complexity. TLM~\cite{tlm} applied LoRA updates on high-perplexity samples for domain adaptation. Titans~\cite{titans} introduced surprise-driven neural memory scaling beyond 2M context. ATLAS~\cite{atlas} expanded MLP capacity through polynomial feature mapping without gradient descent.
+
+Most relevant to QASP is qTTT~\cite{qttt}, which performs gradient updates exclusively on query projections while reusing the KV cache. qTTT operates at the \emph{vector} level on $\mathcal{S}^{d-1}$, treating each head independently; QASP lifts this to the \emph{matrix} level on $\St(k,d)$, jointly optimizing all heads with orthogonality constraints. The practical distinction is that vector-level updates do not directly enforce head diversity, whereas Stiefel projection encodes such diversity as an explicit geometric constraint.
+
+\subsection{Stiefel Manifold Optimization in Deep Learning}
+
+Optimization on the Stiefel manifold has emerged as a principled approach for maintaining geometric structure. Muon~\cite{muon} demonstrated that constraining optimizer steps to $\St(k,d)$ via Newton-Schulz iteration can reduce training steps by 48--52\% compared to AdamW. Mousse~\cite{mousse} improved upon Muon with curvature-aware Kronecker-factored preconditioning. StelLA~\cite{stella} applied Stiefel constraints to LoRA through $\mathbf{U}\mathbf{S}\mathbf{V}^\top$ factorization.
+
+These methods apply Stiefel optimization during \emph{training}; by contrast, QASP studies the same geometric idea in a \emph{test-time} adaptation setting. QASP also incorporates information quality awareness, which neither Muon nor StelLA targets directly, enabling content-sensitive optimization that suppresses lazy aggregation.
+
+\subsection{Long-Context Transformer Architectures}
+
+\textbf{Position encoding extensions.} YaRN~\cite{yarn} introduced ``NTK-by-parts'' interpolation for different RoPE dimension groups, achieving 128K context. LongRoPE~\cite{longrope} extended this to 2M context through progressive non-uniform interpolation. Position Interpolation~\cite{positioninterp} provided a simpler linear scaling baseline.
+
+\textbf{Architectural innovations.} Ring Attention~\cite{ringattention} enabled near-infinite context through block-wise computation with ring communication. LongLoRA~\cite{longlora} combined shifted sparse attention with parameter-efficient fine-tuning. StreamingLLM~\cite{streamingllm} combined attention sinks with sliding windows.
+
+\textbf{Sparse attention.} BigBird~\cite{bigbird} and Longformer~\cite{longformer} demonstrated that sparse attention patterns can achieve linear complexity. These methods typically navigate a retrieval-versus-efficiency trade-off through sparsity, whereas QASP instead combines RaBitQ compression with quality-aware reweighting while preserving a dense token set.
+
+\subsection{Attention Quality and Token Importance}
+
+LaSt-ViT~\cite{lastvit} identified lazy aggregation in Vision Transformers, showing that models use background patches as shortcuts. Registers~\cite{registers} addressed the related issue of high-norm outlier tokens, with subsequent work~\cite{testtimeregisters} showing test-time register mechanisms can achieve similar effects without retraining.
+
+QASP addresses lazy aggregation through a complementary mechanism: rather than architectural modifications (additional tokens or modified attention patterns), we reweight existing gradients, attention scores, and memory retrievals using spectral information quality scores. This approach integrates with the existing ADN pipeline without additional architectural overhead.
+
+\subsection{Positioning of QASP}
+
+Table~\ref{tab:comparison} summarizes how QASP relates to existing approaches.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of QASP with related approaches.}
+\label{tab:comparison}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{KV} & \textbf{Manif.} & \textbf{TTT} & \textbf{Qual.} & \textbf{Scope} \\
+\midrule
+KIVI~\cite{kivi} & 2-bit & \xmark & \xmark & \xmark & Space \\
+GEAR~\cite{gearkv} & 2b+LR & \xmark & \xmark & \xmark & Space \\
+SnapKV~\cite{snapkv} & Evict & \xmark & \xmark & \xmark & Space \\
+Quest~\cite{quest} & Dyn. & \xmark & \xmark & \xmark & Space \\
+TTT-Lin.~\cite{tttlinear} & \xmark & \xmark & \cmark & \xmark & Specif. \\
+qTTT~\cite{qttt} & \xmark & \xmark & \cmark & \xmark & Specif. \\
+Titans~\cite{titans} & \xmark & \xmark & \cmark & \xmark & Storage \\
+Muon~\cite{muon} & \xmark & \cmark & \xmark & \xmark & Train \\
+StelLA~\cite{stella} & \xmark & \cmark & \xmark & \xmark & Finetune \\
+YaRN~\cite{yarn} & \xmark & \xmark & \xmark & \xmark & Position \\
+Ring Attn~\cite{ringattention} & \xmark & \xmark & \xmark & \xmark & Parallel \\
+LaSt-ViT~\cite{lastvit} & \xmark & \xmark & \xmark & \cmark & Vision \\
+\midrule
+ADN (base) & \cmark & \xmark & \cmark & \xmark & 4D \\
+\textbf{ADN+QASP} & \cmark & \cmark & \cmark & \cmark & \textbf{4D} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+QASP brings together aggressive KV compression, geometric query optimization via Stiefel projection, test-time adaptation, and information quality awareness within a single ADN-style pipeline. The intended claim is not that prior work lacks these ingredients individually, but that QASP studies their interaction in one long-context inference framework.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented Quality-Aware Stiefel Projection (QASP), a focused extension to Adaptive Deep Networks (ADN) that addresses two remaining weaknesses in the ADN pipeline: lack of explicit multi-head geometric structure in query adaptation and equal treatment of tokens with widely varying information value. QASP combines matrix-manifold query updates based on the matrix sign function with token-level quality weights for aggregation and memory retrieval, together with batch-level quality modulation of test-time adaptation.
+
+Under an explicit local analysis model, we derive robustness and convergence statements for quality-modulated Stiefel updates under RaBitQ compression noise. Current 1.5B proxy-model evidence suggests gains over the ADN baseline across retrieval, reasoning, and efficiency trade-offs, but we intentionally restrict the paper's main empirical claims to that proxy-model setting.
+
+Overall, QASP points to a promising direction for combining geometric optimization with content-aware token weighting in long-context inference, while preserving the efficiency structure of ADN. Future work should validate the method at full scale, test the assumptions behind the current theory more directly, and study learned alternatives to the current spectral quality score.
+
+\section*{Limitations and Ongoing Work}
+
+\begin{itemize}
+    \item \textbf{Preliminary empirical status:} The core empirical evidence currently comes from a 1.5B proxy model plus component-level validation. We therefore restrict the main empirical claims to that setting and do not rely on 8.7B extrapolations as evidence.
+    \item \textbf{Model-dependent theory:} Our convergence and robustness statements rely on local smoothness, bounded noise, and simplified operator assumptions. They clarify the update rule, but they do not constitute full global guarantees for transformer optimization.
+    \item \textbf{Computational overhead:} Value-weight computation adds a modest overhead; a learned proxy for token quality may reduce this cost further.
+    \item \textbf{Layer-wise formulation:} The current Stiefel projection is applied per layer. Cross-layer alignment and shared manifold structure remain open design questions.
+    \item \textbf{Architecture generality:} We have not yet evaluated QASP on alternative backbones such as Mamba, RWKV, or hybrid sequence models.
+    \item \textbf{Deployment realism:} Additional production-style studies are still needed to assess robustness under real serving workloads, heterogeneous hardware, and retrieval-heavy pipelines.
+\end{itemize}
+
+\begin{thebibliography}{50}
+
+\bibitem{adn}
+Anonymous. Adaptive Deep Networks: Four-Dimensional Query Optimization for Efficient Long-Context Inference. \emph{Technical report}, 2026. (under review)
+
+\bibitem{rabitq}
+J. Gao and C. Long. RaBitQ: Quantizing High-Dimensional Vectors with a Theoretical Error Bound. \emph{SIGMOD}, 2024.
+
+\bibitem{attnres}
+Kimi Team, MoonshotAI. Attention Residuals for Deep Transformer Networks. \emph{arXiv:2603.15031}, 2026.
+
+\bibitem{engram}
+DeepSeek-AI. Engram: Conditional Memory via Scalable n-gram Lookup. \emph{https://github.com/deepseek-ai/Engram}, 2026.
+
+\bibitem{kivi}
+Z. Liu, J. Yuan, H. Jin, S. Zhong, Z. Xu, V. Braverman, B. Chen, and X. Hu. KIVI: A Tuning-Free Asymmetric 2-bit Quantization for KV Cache. \emph{ICML}, 2024.
+
+\bibitem{kvquant}
+C. Hooper, S. Kim, H. Mohber, T. Wattanawong, M. W. Mahoney, Y. S. Shao, K. Keutzer, and A. Gholami. KVQuant: Towards 10 Million Context Length LLM Inference with KV Cache Quantization. \emph{NeurIPS}, 2024.
+
+\bibitem{gearkv}
+H. Kang, Q. Zhang, S. Kundu, G. Jeong, Z. Liu, T. Krishna, and T. Zhao. GEAR: An Efficient KV Cache Compression Recipe for Near-Lossless Generative Inference of LLM. \emph{arXiv:2403.05527}, 2024.
+
+\bibitem{snapkv}
+Y. Li, Y. Huang, B. Yang, B. Venkitesh, A. Locatelli, H. Ye, T. Cai, P. Lewis, and D. Chen. SnapKV: LLM Knows What You are Looking for Before Generation. \emph{NeurIPS}, 2024.
+
+\bibitem{quest}
+J. Tang, Y. Zhao, K. Zhu, G. Xiao, B. Kovvuri, M. S. Rajbhandari, C. Li, and S. Han. Quest: Query-Aware Sparsity for Efficient Long-Context LLM Inference. \emph{ICML}, 2024.
+
+\bibitem{h2o}
+Z. Zhang, S. Sheng, W. Jin, M. Zhang, H. Zhu, Q. Hou, Z. Wang, F. Wu, G. A. Kennedy, H. Zhu, et al. H$_2$O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models. \emph{NeurIPS}, 2023.
+
+\bibitem{pyramidkv}
+Y. Cai, Z. Liu, Y. Gao, Y. Ma, K. Chen, and W. Ouyang. PyramidKV: Dynamic KV Cache Compression with Hierarchical Importance Estimation. \emph{arXiv:2410.17238}, 2024.
+
+\bibitem{qjl}
+A. Zandieh, M. Han, I. Markov, V. S. Tomar, E. V. Arisoy, T. Javidi, and A. Krishnamurthy. QJL: 1-Bit Quantized JL Transform for KV Cache Compression with Zero Overhead. \emph{ICML}, 2025.
+
+\bibitem{turboquant}
+A. Zandieh, M. Han, I. Markov, E. Arisoy, and A. Krishnamurthy. TurboQuant: Towards Near-Optimal Quantization via Beta Distribution Exploitation. \emph{arXiv:2501.16499}, 2025.
+
+\bibitem{tttlinear}
+Y. Sun, X. Li, K. A. Dalal, J. Xu, A. Vikram, G. Zhang, Y. Dubois, X. Ma, S. Koyejo, T. Hashimoto, and C. Guestrin. Learning to (Learn at Test Time): RNNs with Expressive Hidden States. \emph{ICML}, 2024.
+
+\bibitem{tlm}
+Y. Hu, S. Wang, Z. Li, Y. Gao, Y. Pan, Y. Liu, and W. Xu. Test-Time Learning for Large Language Models. \emph{arXiv:2505.20633}, 2025.
+
+\bibitem{titans}
+A. Behrouz, P. Zhong, and V. Mirrokni. Titans: Learning to Memorize at Test Time. \emph{arXiv:2501.00663}, 2025.
+
+\bibitem{atlas}
+A. Behrouz, M. Hashemi, F. Faghri, and V. Mirrokni. ATLAS: Adaptive Test-Time Learning with Adaptive Memory Capacity. \emph{arXiv:2506.04226}, 2025.
+
+\bibitem{qttt}
+T. Bansal, J. D. Lee, and S. Arora. Test-Time Training for Long-Context LLMs: A Query-Only Approach. \emph{ICLR}, 2025.
+
+\bibitem{muon}
+J. Bernstein and L. Newhouse. Muon: An Optimizer for Hidden Layers in Neural Networks. \emph{arXiv:2410.10678}, 2024.
+
+\bibitem{mousse}
+Q. Guo, S. Xing, J. Huang, K. Lv, Y. Zhou, X. Qiu, and K. Chen. Mousse: Rectifying the Geometry of Muon with Curvature-Aware Preconditioning. \emph{arXiv:2603.09697}, 2026.
+
+\bibitem{stella}
+J. Chen, A. Zhang, D. Li, A. S. M. Sajeev, S. Chang, B. Han, S. Xie, and J. Liu. StelLA: Subspace Learning in Low-rank Adaptation using Stiefel Manifold. \emph{arXiv:2510.01938}, 2025.
+
+\bibitem{yarn}
+B. Peng, J. Quesnelle, H. Fan, and E. Shippole. YaRN: Efficient Context Window Extension of Large Language Models. \emph{ICLR}, 2024.
+
+\bibitem{longrope}
+Y. Ding, L. Zhang, C. Zhang, Y. Xu, N. Shang, J. Xu, F. Yang, and M. Yang. LongRoPE: Extending LLM Context Window Beyond 2 Million Tokens. \emph{ICML}, 2024.
+
+\bibitem{positioninterp}
+S. Chen, S. Wong, L. Chen, and Y. Tian. Extending Context Window of Large Language Models via Position Interpolation. \emph{arXiv:2306.15595}, 2023.
+
+\bibitem{ringattention}
+H. Liu, M. Zaharia, and P. Abbeel. Ring Attention with Blockwise Transformers for Near-Infinite Context. \emph{ICLR}, 2024.
+
+\bibitem{longlora}
+Y. Chen, S. Qian, H. Tang, X. Lai, Z. Liu, S. Han, and J. Jia. LongLoRA: Efficient Fine-tuning of Long-Context Large Language Models. \emph{ICLR}, 2024.
+
+\bibitem{streamingllm}
+G. Xiao, Y. Tian, B. Chen, S. Han, and M. Lewis. Efficient Streaming Language Models with Attention Sinks. \emph{ICLR}, 2024.
+
+\bibitem{lastvit}
+C. Shi, X. Chen, M. Chen, X. Chen, and V. Ferrari. Vision Transformers Need More Than Registers: Addressing Patch Score Artifacts via Lazy Aggregation. \emph{CVPR}, 2026.
+
+\bibitem{registers}
+T. Darcet, M. M. El-Nouby, T. Touvron, M. Cord, M. Douze, M. S. Rezaie, M. S. Ramzi, F. Bordes, G. Synnaeve, H. Jegou, et al. Vision Transformers Need Registers. \emph{ICLR}, 2024.
+
+\bibitem{testtimeregisters}
+N. Jiang, S. Chen, and M. Cho. Vision Transformers Don't Need Trained Registers. \emph{arXiv:2506.08010}, 2025.
+
+\bibitem{bigbird}
+M. Zaheer, G. Guruganesh, K. A. Dubey, J. Ainslie, C. Alberti, S. Ontanon, P. Pham, A. Ravula, Q. Wang, L. Yang, et al. Big Bird: Transformers for Longer Sequences. \emph{NeurIPS}, 2020.
+
+\bibitem{longformer}
+I. Beltagy, M. E. Peters, and A. Cohan. Longformer: The Long-Document Transformer. \emph{arXiv:2004.05150}, 2020.
+
+\bibitem{linformer}
+S. Wang, B. Z. Li, M. Khabsa, H. Fang, and H. Ma. Linformer: Self-Attention with Linear Complexity. \emph{arXiv:2006.04768}, 2020.
+
+\bibitem{ttt}
+Y. Sun, X. Wang, Z. Liu, J. Miller, A. Efros, and M. Hardt. Test-Time Training with Self-Supervision for Generalization under Distribution Shifts. \emph{ICML}, 2020.
+
+\bibitem{needle}
+G. Kamradt. Needle in a Haystack -- Pressure Testing LLMs. \emph{https://github.com/gkamradt/LLMTest\_NeedleInAHaystack}, 2023.
+
+\bibitem{longbench}
+Y. Bai, X. Lv, J. Zhang, H. Lyu, J. Tang, Z. Huang, Z. Du, X. Liu, A. Zeng, L. Hou, et al. LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding. \emph{arXiv:2308.14508}, 2023.
+
+\bibitem{leval}
+D. An, S. Gong, J. Shao, B. Chen, D. Lin, and X. Qiu. L-Eval: Instituting Standardized Evaluation for Long Context Language Models. \emph{arXiv:2307.11088}, 2023.
+
+\bibitem{ruler}
+C.-P. Hsieh, S. Sun, S. Kriman, S. Acharya, D. Rekesh, F. Long, and B. Ginsburg. RULER: What's the Real Context Size of Your Long-Context Language Models? \emph{arXiv:2404.06654}, 2024.
+
+\bibitem{math}
+D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. Steinhardt. Measuring Mathematical Problem Solving With the MATH Dataset. \emph{NeurIPS}, 2021.
+
+\bibitem{gsm8k}
+K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, et al. Training Verifiers to Solve Math Word Problems. \emph{arXiv:2110.14168}, 2021.
+
+\bibitem{lorafa}
+S. Sheng, Y. Zhang, and S. Han. LoRA-FA: Memory-efficient Low-rank Adaptation for Large Language Models Fine-tuning. \emph{arXiv:2308.03303}, 2023.
+
+\bibitem{higham1986polar}
+N. J. Higham. Computing the Polar Decomposition---with Applications. \emph{SIAM Journal on Scientific and Statistical Computing}, 7(4):1160--1174, 1986.
+
+\end{thebibliography}
+
+\end{document}

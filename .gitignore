@@ -264,6 +264,7 @@ ablation_results/
 # AutoResearch local runs (generated per machine; not source)
 experiments/autoresearch/trials/
 experiments/autoresearch/best/
+.worktrees/
 
 # Large output files
 *.json.gz
