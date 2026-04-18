@@ -7,7 +7,12 @@ import math
 import pytest
 import torch
 
-from QASP.inference.rabitq import RaBitQCodec
+from QASP.inference.rabitq import (
+    RaBitQCodec,
+    pack_sign_bits_pm1,
+    packed_sign_dim,
+    unpack_sign_bits_pm1,
+)
 
 
 def test_rotation_buffer_is_orthonormal() -> None:
@@ -17,14 +22,27 @@ def test_rotation_buffer_is_orthonormal() -> None:
     assert torch.allclose(q.transpose(-2, -1) @ q, identity, atol=1e-5)
 
 
-def test_encode_preserves_norm_and_returns_int8_signs() -> None:
+def test_encode_preserves_norm_and_returns_packed_uint8_by_default() -> None:
     torch.manual_seed(0)
     codec = RaBitQCodec(dim=32, seed=1)
     x = torch.randn(4, 32)
 
     signs, norms = codec.encode(x)
 
+    assert signs.dtype == torch.uint8
+    assert signs.shape == (4, packed_sign_dim(32))
+    assert torch.allclose(norms, x.norm(dim=-1), atol=1e-5)
+
+
+def test_encode_packed_false_returns_int8_signs() -> None:
+    torch.manual_seed(0)
+    codec = RaBitQCodec(dim=32, seed=1)
+    x = torch.randn(2, 32)
+
+    signs, norms = codec.encode(x, packed=False)
+
     assert signs.dtype == torch.int8
+    assert signs.shape == (2, 32)
     assert set(signs.unique().tolist()).issubset({-1, 1})
     assert torch.allclose(norms, x.norm(dim=-1), atol=1e-5)
 
@@ -54,6 +72,36 @@ def test_decode_rejects_mismatched_shapes() -> None:
     bad_norms = torch.ones(2, 4)
     with pytest.raises(ValueError):
         codec.decode(signs, bad_norms)
+
+
+def test_pack_unpack_round_trip_random_pm1() -> None:
+    torch.manual_seed(9)
+    for d in (1, 3, 7, 8, 63, 64):
+        signs = torch.randint(0, 2, (5, 11, d), dtype=torch.int8) * 2 - 1
+        packed = pack_sign_bits_pm1(signs)
+        assert packed.shape == (5, 11, packed_sign_dim(d))
+        back = unpack_sign_bits_pm1(packed, d)
+        assert torch.equal(signs, back)
+
+
+def test_packed_encode_decode_matches_quantize() -> None:
+    torch.manual_seed(10)
+    codec = RaBitQCodec(dim=40, seed=3)
+    x = torch.randn(6, 40)
+    packed, norms = codec.encode(x, packed=True)
+    from_int8, _ = codec.encode(x, packed=False)
+    out_packed = codec.decode(packed, norms)
+    out_int8 = codec.decode(from_int8, norms)
+    assert torch.allclose(out_packed, out_int8, atol=0.0, rtol=0.0)
+    assert torch.allclose(out_packed, codec.quantize(x), atol=0.0, rtol=0.0)
+
+
+def test_decode_rejects_wrong_packed_width() -> None:
+    codec = RaBitQCodec(dim=16, seed=0)
+    bad = torch.zeros(2, 1, dtype=torch.uint8)
+    norms = torch.ones(2)
+    with pytest.raises(ValueError, match="packed_last_dim"):
+        codec.decode(bad, norms)
 
 
 def test_reconstruction_scale_matches_closed_form() -> None:
