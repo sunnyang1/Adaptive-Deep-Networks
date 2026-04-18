@@ -1,6 +1,11 @@
-"""Spectral information-quality score ``rho(t)`` from QASP Section 3.2.
+"""Spectral information-quality score ``rho(t)`` (QASP Sec.~3.2, ``eq:quality-score``).
 
-Implements the paper's definition (Eq. 5):
+This module implements the **per-token** spectral score: one FFT along the hidden
+dimension per token position. The paper also discusses sliding-window amortization
+(``sec:sliding-window`` in ``QASP_paper.tex``) for complexity; that batched path is
+not implemented here and is optional for mathematical equivalence.
+
+Implements the paper's definition:
 
     s(t) = || F^{-1} ( F(h_t) ⊙ g_LP ) ||_2 / || h_t ||_2,
     rho(t) = 1 - s(t),

@@ -1,4 +1,4 @@
-"""Value-weighted AttnRes block (QASP Section 5.2, Eq. 8).
+"""Value-weighted AttnRes block (QASP Sec.~5.2; ``eq:block-quality`` / ``eq:value-weighted-attnres``).
 
 Implements the value-weighted attention over preceding block representations
 using a learned per-layer pseudo-query ``w_ℓ ∈ R^d``:
@@ -7,9 +7,17 @@ using a learned per-layer pseudo-query ``w_ℓ ∈ R^d``:
     α_{m→ℓ}^{(ρ)} = softmax_m( score_{m→ℓ} )
     h_ℓ           = sum_m α_{m→ℓ}^{(ρ)} · B_m
 
-``ρ̄_m`` is the mean information-quality score over the tokens in block ``m``
-(QASP Eq. 7). When ``ρ̄_m`` is small, block ``m`` contributes less to the
-softmax, biasing the residual towards content-rich blocks.
+``ρ̄_m`` is the mean information-quality score over the tokens in block ``m``.
+When ``ρ̄_m`` is small, block ``m`` contributes less to the
+softmax, biasing depth aggregation towards content-rich blocks.
+
+**Canonical semantics.**  The paper defines ``B_m`` and ``ρ̄_m`` from a *single*
+forward pass over the full sequence (fixed context).  Callers should pass
+``block_representations`` and ``block_quality`` computed from that full pass
+(e.g. via :func:`QASP.models.components.compute_block_representations`).  The
+broadcast residual is added at every token position; this matches the
+manuscript's evaluation definition and differs in general from prefix-only
+incremental decoding (see :meth:`QASP.models.qasp_transformer.QASPTransformer.step`).
 """
 
 from __future__ import annotations
@@ -23,7 +31,11 @@ from torch import Tensor
 
 
 class ValueWeightedAttnRes(nn.Module):
-    """Per-layer value-weighted aggregation of block representations."""
+    """Per-layer value-weighted aggregation of block representations.
+
+    Inputs must reflect the **full-sequence** block summaries and qualities used
+    in the paper's reference forward pass; see module docstring.
+    """
 
     def __init__(self, hidden_size: int) -> None:
         super().__init__()

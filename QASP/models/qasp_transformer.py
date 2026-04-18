@@ -1,4 +1,18 @@
-"""Top-level QASP transformer model and factory helper."""
+"""Top-level QASP transformer model and factory helper.
+
+**Evaluation semantics.**  :meth:`QASPTransformer.forward` and
+:meth:`QASPTransformer.prefill` run a full-sequence pass and, when AttnRes is
+enabled, compute block summaries and ``ρ̄_m`` from the complete hidden states —
+this matches the QASP paper's canonical (Path~A) definition.
+
+:meth:`QASPTransformer.step` is an engineering API for autoregressive decoding.
+With ``use_attnres=True``, block statistics are recomputed from a growing
+``layer_input_history`` prefix; that information set differs from the full
+sequence in the paper's equations, so **step logits are not guaranteed** to
+match ``forward(cat(prefix, new_token))`` at intermediate positions.  Tests in
+``tests/integration/test_qasp_prefill_step_numeric_parity.py`` document the
+expected parity when AttnRes is disabled vs. the intentional gap when enabled.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +36,13 @@ LayerLossFn = Callable[[int, Tensor], Tensor]
 
 
 class QASPTransformer(nn.Module):
-    """Minimal runnable transformer with QASP AttnRes / Engram hooks."""
+    """Minimal runnable transformer with QASP AttnRes / Engram hooks.
+
+    Use :meth:`forward` (or :meth:`prefill` for logits+KV cache) for behaviour
+    aligned with the paper's **full-sequence** value-weighted AttnRes.  Use
+    :meth:`step` only when you need incremental decoding and accept the
+    prefix-based block statistics described in the module docstring.
+    """
 
     def __init__(self, config: QASPTransformerConfig) -> None:
         super().__init__()
@@ -53,6 +73,7 @@ class QASPTransformer(nn.Module):
             self.kv_codec = None
 
     def forward(self, input_ids: Tensor) -> Tensor:
+        """Full-sequence forward pass; canonical definition for AttnRes + QASP."""
         if input_ids.ndim != 2:
             raise ValueError("input_ids must have shape [B, T]")
 
@@ -92,9 +113,11 @@ class QASPTransformer(nn.Module):
     def prefill(self, input_ids: Tensor) -> tuple[Tensor, KVCache]:
         """Run the full forward pass while capturing per-layer K/V caches.
 
-        Returns ``(logits, cache)`` where ``logits`` has the same shape as
-        :meth:`forward` (``[B, T, V]``) and ``cache`` is a populated
-        :class:`KVCache` ready for O(L) :meth:`step` calls.
+        Uses the same block pooling as :meth:`forward` (full-sequence, paper
+        Path~A).  Returns ``(logits, cache)`` where ``logits`` matches
+        :meth:`forward` shape ``[B, T, V]`` and ``cache`` is populated for
+        :meth:`step`.  Subsequent :meth:`step` calls use prefix statistics for
+        AttnRes; see module docstring.
         """
 
         if input_ids.ndim != 2:
@@ -140,7 +163,15 @@ class QASPTransformer(nn.Module):
 
     @torch.no_grad()
     def step(self, last_token: Tensor, cache: KVCache) -> Tensor:
-        """Incrementally decode one token using cached K/V; returns ``[B, V]`` logits."""
+        """Incrementally decode one token using cached K/V; returns ``[B, V]`` logits.
+
+        When ``use_attnres`` is True, block summaries are computed from the
+        concatenated prefix history, **not** from a hypothetical full forward over
+        the extended sequence.          This is an implementation choice for streaming
+        decode and is **not** claimed to match the paper's full-sequence
+        operator at every position (see QASP paper, Value-Weighted AttnRes,
+        canonical evaluation semantics).
+        """
 
         if last_token.ndim != 2 or last_token.shape[1] != 1:
             raise ValueError("last_token must have shape [B, 1]")

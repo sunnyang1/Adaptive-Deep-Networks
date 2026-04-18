@@ -1,6 +1,6 @@
 """Matrix-space QASP adaptation loop with Stiefel projection.
 
-Implements the inner update of QASP paper Algorithm 2 (Section 5.4):
+Implements the inner update of QASP paper Algorithm~2 (``alg:qasp``, Sec.~5.4):
 
     G^(n)        = ∇_W L(W^(n); {h_t})       # Step 1: per-iteration gradient
     G̃^(n)        = ρ̄ · G^(n)                  # Step 2: batch-level quality modulation

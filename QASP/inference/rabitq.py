@@ -1,4 +1,4 @@
-"""RaBitQ 1-bit codec for KV-cache quantization (QASP paper §5.5).
+"""RaBitQ 1-bit codec for KV-cache quantization (ADN space dimension, ``sec:adn-rabitq``).
 
 Encodes a vector ``x ∈ R^d`` as a triple ``(signs ∈ {-1, +1}^d, norm)`` after a
 shared orthonormal rotation ``Q``:

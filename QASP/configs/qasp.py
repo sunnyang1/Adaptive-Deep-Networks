@@ -1,6 +1,11 @@
 """Configuration objects for QASP adaptation behaviour.
 
-Default values follow Table 2 of the QASP paper:
+Defaults align with ``tab:qasp-params`` in ``QASP_paper.tex`` for Stiefel /
+ponder-gate hyperparameters. The table's sliding-window row describes optional
+spectral amortization (``sec:sliding-window``); the reference
+``compute_quality_score`` path is per-token FFT and does not use ``W``.
+
+Defaults for adaptation match ``tab:qasp-params`` in the QASP paper:
     * Newton-Schulz iterations: 5
     * Test-time learning rate ``eta``: 0.01
     * Max adaptation steps ``N_iter``: 5

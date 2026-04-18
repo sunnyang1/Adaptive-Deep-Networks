@@ -9,7 +9,9 @@ Newton-Schulz iteration of QASP paper Algorithm 1 (Section 4.3):
 The iteration acts directly on ``W`` (rather than on ``W^T W``) and converges
 superlinearly to the nearest Stiefel matrix whenever ``||I - Y_0^T Y_0||_F < 1``
 (QASP paper, Lemma 1). Spectral normalisation ensures ``||Y_0||_2 = 1``, which
-satisfies this assumption for full column rank ``W``.
+satisfies this assumption for full column rank ``W``. Each call is stateless
+(no warm-start cache across adaptation steps; see Implementation Details in
+``QASP_paper.tex``).
 """
 
 from __future__ import annotations

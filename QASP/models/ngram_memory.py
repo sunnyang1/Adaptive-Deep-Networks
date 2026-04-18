@@ -2,7 +2,7 @@
 
 Each entry stores ``(m, ρ_mem)``: the embedding vector ``m ∈ R^d`` and the
 average information-quality score ``ρ_mem ∈ [0, 1]`` over the n-gram tokens
-(paper Eq. just before Eq. 9). Lookup is O(1) via a deterministic FNV-1a hash
+(see the Engram memory tuple in Sec.~5.3 / ``eq:value-weighted-engram``). Lookup is O(1) via a deterministic FNV-1a hash
 modulo the table size; unpopulated slots return zero vectors and zero quality.
 
 This is a CPU-side reference implementation suitable for unit testing and

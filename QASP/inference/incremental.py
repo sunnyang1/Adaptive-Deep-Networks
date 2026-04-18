@@ -1,9 +1,15 @@
-"""True incremental prefill / step API for QASP models.
+"""Incremental prefill / step API for QASP models.
 
-``prefill`` runs the full forward pass once while snapshotting per-layer K/V
-caches. ``step`` then does a 1-token forward whose cost is O(L · T) (one new
-query attending over the cached keys), matching the paper's §5.4 promise of an
-O(L) per-token inner loop when the cache is reused.
+``prefill`` runs one full forward pass while snapshotting per-layer K/V caches.
+That pass matches the paper's **canonical full-sequence** semantics for
+value-weighted AttnRes when AttnRes is enabled.
+
+``step`` issues one new query against cached keys/values (cost scales with
+model depth and cache length, as in standard cached attention).  If the underlying
+model uses AttnRes with block statistics recomputed from a **prefix** history,
+logits need not match a fresh ``forward`` over the extended sequence; the QASP
+paper does not claim bit-identical equivalence between that incremental path
+and the reference forward (see package docstring in ``QASP/__init__.py``).
 """
 
 from __future__ import annotations
@@ -40,7 +46,11 @@ class IncrementalState:
 
 
 class IncrementalInference:
-    """Incremental wrapper that relies on the model's prefill/step API."""
+    """Thin wrapper around ``prefill`` / ``step`` for autoregressive loops.
+
+    Prefer evaluating with :meth:`QASP.models.qasp_transformer.QASPTransformer.forward`
+    when you need strict alignment with the paper's full-sequence definitions.
+    """
 
     def __init__(self, model: _IncrementalModel) -> None:
         if not hasattr(model, "prefill") or not hasattr(model, "step"):

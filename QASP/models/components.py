@@ -77,7 +77,7 @@ class CausalSelfAttention(nn.Module):
         hidden_states: Tensor,
         stiefel_query: Tensor | None,
     ) -> Tensor:
-        """Apply ``h + scale · h W W^T`` where ``W ∈ St(k, d)`` (paper §5.2)."""
+        """Apply ``h + scale · h W W^T`` where ``W ∈ St(k, d)`` (Stiefel query path; see ``sec:qasp-matrix`` in ``QASP_paper.tex``)."""
 
         if stiefel_query is None or self.overlay_scale == 0.0:
             return hidden_states
@@ -127,7 +127,7 @@ class CausalSelfAttention(nn.Module):
         When ``codec`` is provided, ``K`` and ``V`` are passed through
         ``codec.quantize`` before attention so the attention computation
         matches what subsequent :meth:`step` calls will observe. When
-        ``stiefel_query`` is provided, the paper §5.2 overlay is applied to
+        ``stiefel_query`` is provided, the Stiefel overlay (``sec:qasp-matrix``) is applied to
         the query side before ``q_proj``.
         """
 
@@ -228,9 +228,15 @@ def compute_block_representations(
 ) -> tuple[Tensor, Tensor]:
     """Pool hidden states into block summaries and block-level quality.
 
-    Implements QASP paper Eq. (7) for the block-level mean quality
-    ``ρ̄_m = (1/|B_m|) Σ_{t∈B_m} ρ(t)``, with ``ρ(t)`` from the spectral
-    quality score of Section 3.2.
+    Implements label ``eq:block-quality`` in ``QASP_paper.tex`` (block-level mean
+    quality ``ρ̄_m = (1/|B_m|) Σ_{t∈B_m} ρ(t)``), with ``ρ(t)`` from the spectral
+    quality score (``eq:quality-score``, Sec.~3.2).
+
+    **Canonical use.**  Pass the **entire** sequence tensor ``[B, T, D]`` from
+    one forward pass so that ``B_m`` and ``ρ̄_m`` match the paper's
+    full-context definition.  For prefix-only histories (e.g. incremental
+    ``step``), statistics differ from that definition; the manuscript does not
+    claim bit-identical equivalence between the two.
     """
 
     chunks = torch.chunk(hidden_states, chunks=max(1, num_blocks), dim=1)

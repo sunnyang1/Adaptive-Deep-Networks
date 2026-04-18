@@ -1,11 +1,11 @@
-"""Value-weighted Engram fusion (QASP Section 5.3, Eq. 9).
+"""Value-weighted Engram fusion (QASP Sec.~5.3, ``eq:value-weighted-engram``).
 
 Implements
 
     h' = h + α · σ(ρ_mem) · m,   α = σ(w_g · h),
 
-where ``w_g`` is a learned content-dependent gate vector (paper Section 2.3,
-Eq. 4) and ``σ(ρ_mem)`` modulates the contribution by the average information
+where ``w_g`` is a learned gate (cf.~base Engram fusion in Sec.~2.3 of the paper)
+and ``σ(ρ_mem)`` modulates the contribution by the average information
 quality stored alongside the memory entry.
 
 For test/debug use, ``forward`` accepts an explicit ``gate`` override that

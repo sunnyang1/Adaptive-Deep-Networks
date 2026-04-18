@@ -38,11 +38,12 @@
 
 \begin{abstract}
 Long-context inference with Transformers is constrained by four coupled bottlenecks: KV-cache growth, limited access to earlier representations, lack of scalable external memory, and fixed query behavior at test time.
-Adaptive Deep Networks (ADN) addresses these dimensions with RaBitQ for cache compression, AttnRes for block-level depth attention, Engram for external memory, and qTTT for query-only adaptation.
+Adaptive Deep Networks (ADN)~\cite{adn} addresses these dimensions with RaBitQ for cache compression, AttnRes for block-level depth attention, Engram for external memory, and qTTT for query-only adaptation.
 This paper studies two limitations that remain within that framework: qTTT treats attention heads independently and therefore does not explicitly preserve head diversity, while ADN treats all tokens equally even when many tokens are semantically stable but weakly informative.
 We introduce \textbf{Quality-Aware Stiefel Projection (QASP)}, which augments ADN with two mechanisms: matrix-manifold query adaptation via the matrix sign function $\msign(\mathbf{W})=\mathbf{W}(\mathbf{W}^{\top}\mathbf{W})^{-1/2}$, and information quality weighting that downweights low-value tokens in aggregation and memory retrieval while modulating the strength of test-time adaptation.
 Under an explicit local perturbation model, we derive robustness and convergence statements for value-weighted Stiefel updates under 1-bit RaBitQ compression noise.
-Empirically, preliminary experiments on a 1.5B proxy model suggest that ADN+QASP improves needle-in-haystack accuracy at 128K context from 76.3\% to 80.2\% over the ADN baseline, improves MATH from 48.1\% to 51.3\%, and maintains 112 tokens/s throughput.
+Unless noted otherwise, we define value-weighted depth attention on a \emph{full-sequence forward pass} over a fixed context (the canonical evaluation semantics); stepwise autoregressive decoding may use a strictly smaller information set at each position and is not claimed to match this definition exactly.
+Empirically, under the same full-sequence evaluation protocol, preliminary experiments on a 1.5B proxy model suggest that ADN+QASP improves needle-in-haystack accuracy at 128K context from 76.3\% to 80.2\% over the ADN baseline, improves MATH from 48.1\% to 51.3\%, and maintains 112 tokens/s throughput.
 Taken together, these results position QASP as a targeted extension to ADN that improves query diversity and token selectivity while preserving the efficiency advantages of the original framework.
 \end{abstract}
 
@@ -65,7 +66,7 @@ Despite their remarkable success, standard Transformer implementations suffer fr
 
 \subsection{The ADN Framework}
 
-To address these four dimensions holistically, we introduce \textbf{Adaptive Deep Networks (ADN)}, a unified framework comprising four synergistic components:
+To address these four dimensions holistically, we adopt \textbf{Adaptive Deep Networks (ADN)}~\cite{adn}, a unified framework comprising four synergistic components:
 
 \begin{itemize}
     \item \textbf{RaBitQ}~\cite{rabitq} addresses the space challenge through 16$\times$ KV cache compression via unbiased 1-bit quantization with theoretical optimality (matching the Alon--Klartag lower bound).
@@ -103,10 +104,13 @@ We introduce \textbf{Quality-Aware Stiefel Projection (QASP)}, a focused extensi
     \item \textbf{Preliminary empirical evidence:} On a 1.5B proxy model, we observe consistent improvements over the ADN baseline across retrieval and reasoning benchmarks. We do not use larger-model extrapolations as evidence for the paper's main empirical claims.
 \end{enumerate}
 
+\noindent
+Reported metrics and the reference implementation treat \emph{full-sequence forward evaluation} as the default for value-weighted AttnRes (\S\ref{sec:qasp-attnres}); we do not equate this with token-by-token autoregressive decoding (see abstract and Limitations).
+
 \section{The ADN Framework: A Unified Query-Centric Architecture}
 \label{sec:adn}
 
-We present \textbf{Adaptive Deep Networks (ADN)}, a unified framework that addresses four fundamental limitations of standard Transformers through query-centric optimization. ADN comprises four synergistic components, each targeting a specific dimension of the inference pipeline.
+We summarize \textbf{Adaptive Deep Networks (ADN)}~\cite{adn}, a unified framework that addresses four fundamental limitations of standard Transformers through query-centric optimization. ADN comprises four synergistic components, each targeting a specific dimension of the inference pipeline.
 
 \subsection{Space Dimension: RaBitQ Quantization}
 \label{sec:adn-rabitq}
@@ -259,6 +263,8 @@ Computing $\rho(t)$ for every token at every layer is computationally prohibitiv
 
 \textbf{Complexity.} The amortized cost per token is $O(d \log d / W)$, which becomes negligible for $W = 512$ and $d = 2048$.
 
+\textbf{Reference implementation scope.} The accompanying QASP code evaluates \eqref{eq:quality-score} with a per-token FFT along the hidden dimension (matching the definition above). Sliding-window batching is an optional engineering amortization; it is not required for mathematical equivalence and is not implemented in the released reference package.
+
 \section{Matrix Sign Function and Stiefel Manifold Optimization}
 \label{sec:msign}
 
@@ -380,7 +386,13 @@ where $\rho(t)$ is computed via Equation~\eqref{eq:quality-score}. The value-wei
 \label{eq:value-weighted-attnres}
 \end{equation}
 
-\textbf{Interpretation.} Blocks dominated by low-value tokens ($\bar{\rho}_m \ll 1$) receive reduced attention weights, biasing the query toward information-rich content. This directly counteracts lazy aggregation.
+\paragraph{Canonical evaluation semantics.}
+Equations~\eqref{eq:block-quality}--\eqref{eq:value-weighted-attnres} are defined on a \emph{single forward evaluation} over the full token sequence (or a fixed training segment): all $\mathbf{h}_t$ and $\rho(t)$ refer to the same simultaneous pass, so block statistics $\bar{\rho}_m$ aggregate over complete blocks in that pass.
+This is the reference semantics for training, analysis, and the reported benchmarks.
+Stepwise autoregressive inference (e.g., cache-centric decoding) computes hidden states and quality scores under a prefix-only information set; in general it need not reproduce the full-sequence quantities above token-by-token.
+We therefore do \emph{not} claim bit-identical equivalence between incremental decoding and this canonical full-context definition; deployment-oriented systems may use approximations or causal variants, which we leave to engineering documentation.
+
+\textbf{Interpretation.} Blocks dominated by low-value tokens ($\bar{\rho}_m \ll 1$) receive reduced attention weights, biasing depth aggregation toward information-rich content. This directly counteracts lazy aggregation.
 
 \subsection{Value-Weighted Engram}
 \label{sec:qasp-engram}
@@ -505,7 +517,10 @@ Using the perturbation bound for polar decomposition \cite{higham1986polar} and 
 \label{sec:experiments}
 
 \paragraph{Empirical scope.}
-This section focuses on the current 1.5B proxy-model evidence. The draft's empirical package combines integrated proxy-model runs with controlled component-level validations on the same experimental line, so we use it to assess directionality and trade-offs rather than to claim a fully finalized benchmark package. We do not use larger-model extrapolations as evidence in the main experiments section.
+This section focuses on the current 1.5B proxy-model evidence. The empirical package combines integrated proxy-model runs with controlled component-level validations on the same experimental line, so we use it to assess directionality and trade-offs rather than to claim a fully finalized benchmark package. We do not use larger-model extrapolations as evidence in the main experiments section.
+
+\paragraph{Alignment with Section~\ref{sec:qasp-attnres}.}
+Unless stated otherwise, evaluations use \emph{full-sequence forward passes} over each test prompt (fixed context), consistent with the canonical semantics of value-weighted AttnRes in \S\ref{sec:qasp-attnres}.
 
 \subsection{Experimental Setup}
 
@@ -563,7 +578,8 @@ Test-time learning rate $\eta$ & 0.01 \\
 Max adaptation steps $T$ & 5 \\
 \midrule
 \multicolumn{2}{c}{\textit{Value Weight Computation}} \\
-DFT window size & 512 \\
+Spectral score FFT & Per-token, along channel dimension $d$ (\eqref{eq:quality-score}; reference code) \\
+Sliding-window length $W$ & 512 (Sec.~\ref{sec:sliding-window}; optional amortization; not in reference code) \\
 Low-pass cutoff $f_c$ & $d/4$ \\
 Update frequency & Per ponder gate trigger \\
 \midrule
@@ -624,11 +640,11 @@ We report results averaged over 100 trials per context length, with 95\% confide
 
 \subsection{Current Results on the Proxy Model (1.5B)}
 
-We first report the current 1.5B proxy-model evidence package for QASP. Because this package still mixes integrated runs with controlled component-level validation, the table below should be read as the present empirical state of the method rather than as a locked final leaderboard.
+We first report the current 1.5B proxy-model evidence package for QASP. Because this package mixes integrated runs with controlled component-level validation, the table below should be read as the present empirical state of the method rather than as a locked final leaderboard.
 
 \begin{table*}[htbp]
 \centering
-\caption{Current performance package on the 1.5B proxy model. The table summarizes the present empirical state of the ADN+QASP line and is intended to show directional gains and trade-offs, not a finalized benchmark package.}
+\caption{Current performance on the 1.5B proxy model. The table summarizes the present empirical state of the ADN+QASP line and is intended to show directional gains and trade-offs, not a finalized benchmark package.}
 \label{tab:main-results}
 \begin{threeparttable}
 \begin{tabular}{lccccccccc}
@@ -753,7 +769,7 @@ The $d/4$ cutoff achieves the best balance, with only 8.7\% overlap with common 
 \end{tabular}
 \end{table}
 
-Five steps provide the best accuracy-throughput trade-off. Diminishing returns beyond 5 steps suggest convergence of the manifold projection.
+Five steps provide the best accuracy-throughput trade-off. Diminishing returns beyond five steps suggest convergence of the manifold projection.
 
 \subsection{Computational Efficiency Analysis}
 
@@ -810,7 +826,7 @@ Latency scales sub-linearly with context length due to efficient attention imple
 
 \subsection{Planned Statistical Validation}
 
-Because the current empirical package is still provisional, we reserve formal hypothesis testing for a follow-up evaluation pass on a frozen benchmark protocol. That pass will use paired tests on matched samples, bootstrap confidence intervals for primary accuracy metrics, and multiple-comparison correction where needed. We intentionally do not report projected confidence intervals or projected effect sizes here, since those would be easier to over-interpret than the current evidence warrants.
+Because the current empirical package is provisional, we reserve formal hypothesis testing for a follow-up evaluation pass on a frozen benchmark protocol. That pass will use paired tests on matched samples, bootstrap confidence intervals for primary accuracy metrics, and multiple-comparison correction where needed. We intentionally do not report projected confidence intervals or projected effect sizes here, since those would be easier to over-interpret than the current evidence warrants.
 
 \subsection{Comparison with Representative Long-Context Methods}
 
@@ -845,10 +861,10 @@ Within this evaluation setting, ADN+QASP shows a favorable trade-off between lon
 
 \subsubsection{Software Stack}
 \begin{itemize}
-    \item \textbf{Framework:} PyTorch 2.2 with custom CUDA kernels
-    \item \textbf{Attention:} FlashAttention-2 for efficient attention computation
-    \item \textbf{Quantization:} Custom RaBitQ implementation with Triton kernels
-    \item \textbf{Manifold:} Newton-Schulz iteration implemented in CUDA
+    \item \textbf{Framework:} PyTorch (reference implementation released with this work)
+    \item \textbf{Attention:} Multi-head attention as in the QASP model code
+    \item \textbf{Quantization:} RaBitQ-style 1-bit KV codec in PyTorch (int8 signs with per-vector $\ell_2$ norms)
+    \item \textbf{Manifold:} Newton--Schulz Stiefel projection in PyTorch
 \end{itemize}
 
 \subsubsection{Hardware Configuration}
@@ -860,11 +876,9 @@ Within this evaluation setting, ADN+QASP shows a favorable trade-off between lon
 
 \subsubsection{Optimization Details}
 \begin{itemize}
-    \item \textbf{Newton-Schulz:} 5 iterations, warm-start from previous projection
-    \item \textbf{Value weights:} Computed once per DFT window, cached for 512 tokens
-    \item \textbf{Mixed precision:} BF16 for forward/backward, FP32 for msign accumulator
-    \item \textbf{Gradient checkpointing:} Enabled for layers $> 32$ to reduce memory
-    \item \textbf{Compilation:} torch.compile with reduce-overhead mode
+    \item \textbf{Newton--Schulz (reference code):} 5 iterations per call to the Stiefel projector; each call renormalizes and iterates from scratch (no cached warm-start state across steps).
+    \item \textbf{Value weights (reference code):} Per-token FFT along $d$ as in \eqref{eq:quality-score}. Sliding-window batching and cross-token caching (Sec.~\ref{sec:sliding-window}, $W{=}512$) are not implemented in the released package.
+    \item \textbf{Proxy-model training (Table~\ref{tab:hyperparams}):} BF16 mixed precision, gradient checkpointing on selected layers, and optional \texttt{torch.compile} were used in the pipeline that produced the 1.5B results; these choices are training-stack concerns and are not imposed by the released PyTorch modules (which default to FP32 unless a script sets mixed precision).
 \end{itemize}
 
 
@@ -880,7 +894,10 @@ We rely on the Stiefel manifold and matrix sign function as defined in Definitio
 
 \begin{assumption}[Lipschitz Gradient]\label{ass:lipschitz}
 The loss function $\mathcal{L}: \mathbb{R}^{d \times k} \to \mathbb{R}$ has $L$-Lipschitz continuous gradient:
-$\|\nabla \mathcal{L}(\mathbf{W}_1) - \nabla \mathcal{L}(\mathbf{W}_2)\|_F \leq L \|\mathbf{W}_1 - \mathbf{W}_2\|_F$ for all $\mathbf{W}_1, \mathbf{W}_2$.
+\[
+\|\nabla \mathcal{L}(\mathbf{W}_1) - \nabla \mathcal{L}(\mathbf{W}_2)\|_F \leq L \|\mathbf{W}_1 - \mathbf{W}_2\|_F
+\quad \text{for all } \mathbf{W}_1, \mathbf{W}_2 \in \mathbb{R}^{d \times k}.
+\]
 This is standard for Transformers with smooth activations; we work in a compact region around initialization.
 \end{assumption}
 
@@ -900,7 +917,7 @@ RaBitQ compression introduces additive noise $\boldsymbol{\Delta}$ to gradients 
 
 \subsection{Stability of Stiefel Projection Under Noise}
 
-We provide the complete proof of Lemma~\ref{lem:stability}.
+We provide the complete proof of the following statement, which formalizes and extends Lemma~\ref{lem:stability} from \S\ref{sec:robustness}.
 
 \begin{lemma}[Stability of Stiefel projection under noise]\label{lem:stability-full}
 Let $\mathbf{W} \in \mathbb{R}^{d \times k}$ have singular values $\sigma_1 \geq \cdots \geq \sigma_k > 0$ and condition number $\kappa(\mathbf{W}) = \sigma_1/\sigma_k$. Let $\mathbf{G} = \nabla_{\mathbf{W}} \mathcal{L}$ be the true gradient and $\tilde{\mathbf{G}} = \mathbf{G} + \boldsymbol{\Delta}$ the noisy gradient with $\|\boldsymbol{\Delta}\|_F \leq \delta \|\mathbf{G}\|_F$. Assume $\eta \|\mathbf{G}\|_F < \sigma_k$. Then:
@@ -1085,8 +1102,8 @@ KIVI~\cite{kivi} & 2-bit & \xmark & \xmark & \xmark & Space \\
 GEAR~\cite{gearkv} & 2b+LR & \xmark & \xmark & \xmark & Space \\
 SnapKV~\cite{snapkv} & Evict & \xmark & \xmark & \xmark & Space \\
 Quest~\cite{quest} & Dyn. & \xmark & \xmark & \xmark & Space \\
-TTT-Lin.~\cite{tttlinear} & \xmark & \xmark & \cmark & \xmark & Specif. \\
-qTTT~\cite{qttt} & \xmark & \xmark & \cmark & \xmark & Specif. \\
+TTT-Lin.~\cite{tttlinear} & \xmark & \xmark & \cmark & \xmark & Adapt. \\
+qTTT~\cite{qttt} & \xmark & \xmark & \cmark & \xmark & Adapt. \\
 Titans~\cite{titans} & \xmark & \xmark & \cmark & \xmark & Storage \\
 Muon~\cite{muon} & \xmark & \cmark & \xmark & \xmark & Train \\
 StelLA~\cite{stella} & \xmark & \cmark & \xmark & \xmark & Finetune \\
@@ -1105,17 +1122,19 @@ QASP brings together aggressive KV compression, geometric query optimization via
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented Quality-Aware Stiefel Projection (QASP), a focused extension to Adaptive Deep Networks (ADN) that addresses two remaining weaknesses in the ADN pipeline: lack of explicit multi-head geometric structure in query adaptation and equal treatment of tokens with widely varying information value. QASP combines matrix-manifold query updates based on the matrix sign function with token-level quality weights for aggregation and memory retrieval, together with batch-level quality modulation of test-time adaptation.
+We presented Quality-Aware Stiefel Projection (QASP), a focused extension to Adaptive Deep Networks (ADN)~\cite{adn} that addresses two remaining weaknesses in the ADN pipeline: lack of explicit multi-head geometric structure in query adaptation and equal treatment of tokens with widely varying information value. QASP combines matrix-manifold query updates based on the matrix sign function with token-level quality weights for aggregation and memory retrieval, together with batch-level quality modulation of test-time adaptation.
 
 Under an explicit local analysis model, we derive robustness and convergence statements for quality-modulated Stiefel updates under RaBitQ compression noise. Current 1.5B proxy-model evidence suggests gains over the ADN baseline across retrieval, reasoning, and efficiency trade-offs, but we intentionally restrict the paper's main empirical claims to that proxy-model setting.
 
-Overall, QASP points to a promising direction for combining geometric optimization with content-aware token weighting in long-context inference, while preserving the efficiency structure of ADN. Future work should validate the method at full scale, test the assumptions behind the current theory more directly, and study learned alternatives to the current spectral quality score.
+Overall, QASP points to a promising direction for combining geometric optimization with content-aware token weighting in long-context inference, while preserving the efficiency structure of ADN. Future work should validate the method at full scale, test the assumptions behind the current theory more directly, study learned alternatives to the current spectral quality score, and characterize autoregressive implementations relative to the full-sequence canonical semantics in \S\ref{sec:qasp-attnres}.
 
 \section*{Limitations and Ongoing Work}
 
 \begin{itemize}
     \item \textbf{Preliminary empirical status:} The core empirical evidence currently comes from a 1.5B proxy model plus component-level validation. We therefore restrict the main empirical claims to that setting and do not rely on 8.7B extrapolations as evidence.
     \item \textbf{Model-dependent theory:} Our convergence and robustness statements rely on local smoothness, bounded noise, and simplified operator assumptions. They clarify the update rule, but they do not constitute full global guarantees for transformer optimization.
+    \item \textbf{Incremental decoding vs.\ canonical forward:} Value-weighted AttnRes and $\rho(t)$ are defined for a full-sequence forward pass (\S\ref{sec:qasp-attnres}). Autoregressive decoding with KV caches may instantiate a different information set; we do not claim numerical identity between stepwise and full-sequence implementations.
+    \item \textbf{RaBitQ reference vs.\ production KV:} The accompanying codec matches the 1-bit inner-product model in \S\ref{sec:adn-rabitq} using plain tensors (int8 signs and norm metadata). It does \emph{not} include bit-packed KV layouts, fused quantization--attention kernels, or other serving-system optimizations that ``1-bit KV / deployment'' discussions often assume alongside memory and throughput accounting.
     \item \textbf{Computational overhead:} Value-weight computation adds a modest overhead; a learned proxy for token quality may reduce this cost further.
     \item \textbf{Layer-wise formulation:} The current Stiefel projection is applied per layer. Cross-layer alignment and shared manifold structure remain open design questions.
     \item \textbf{Architecture generality:} We have not yet evaluated QASP on alternative backbones such as Mamba, RWKV, or hybrid sequence models.
@@ -1131,7 +1150,7 @@ Anonymous. Adaptive Deep Networks: Four-Dimensional Query Optimization for Effic
 J. Gao and C. Long. RaBitQ: Quantizing High-Dimensional Vectors with a Theoretical Error Bound. \emph{SIGMOD}, 2024.
 
 \bibitem{attnres}
-Kimi Team, MoonshotAI. Attention Residuals for Deep Transformer Networks. \emph{arXiv:2603.15031}, 2026.
+Kimi Team. Attention Residuals. \emph{arXiv:2603.15031}, 2026.
 
 \bibitem{engram}
 DeepSeek-AI. Engram: Conditional Memory via Scalable n-gram Lookup. \emph{https://github.com/deepseek-ai/Engram}, 2026.
