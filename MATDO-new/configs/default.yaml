@@ -1,0 +1,27 @@
+config_version: 1
+
+matdo_new:
+  package_readme: MATDO-new/README.md
+  inference_config: MATDO-new/configs/inference/default.yaml
+  experiments_config: MATDO-new/configs/experiments/default.yaml
+
+policy:
+  quantization_bits: [2, 4, 8]
+  min_quantization_bits: 2
+  scope_span: 4
+  total_hbm_blocks: 256
+  min_scope_blocks: 1
+  max_t_steps: 4096
+  target_error: 0.05
+  arbitrage_zone_rho: 0.93
+  critical_zone_rho: 0.98
+  dram_utilization_limit: 0.90
+  e_max: 128000
+  e0: 10000.0
+  zeta: 0.35
+  eta: 0.5
+  alpha: 0.015
+  beta: 2.0
+  gamma: 0.10
+  delta: 0.005
+  epsilon: 0.002

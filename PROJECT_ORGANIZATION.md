@@ -20,6 +20,7 @@
 | `src/`            | 库源码（attnres、gating、engram、models、qttt、rabitq 等） |
 | `tasks/`          | 任务与 PRD 说明（Markdown）                            |
 | `tests/`          | 单元 / 集成 / E2E 测试                                |
+| `MATDO-new/`      | **MATDO-E 论文对齐子包**（`matdo_new`：策略、增量推理、实验 CLI；`pip install -e MATDO-new`） |
 | `third_party/`    | 第三方依赖（如 `rabitq-lib`）                           |
 | `.github/`        | CI 工作流                                          |
 | `.workbuddy/`     | 本地 WorkBuddy 配置（可选）                             |

@@ -8,6 +8,8 @@ This is the validation framework for the paper "Adaptive Deep Networks: Integrat
 
 For the canonical directory map (root layout, `docs/`, `experiments/`, `src/`, `scripts/`, `tasks/`, tests, and where papers and guides live), see [PROJECT_ORGANIZATION.md](PROJECT_ORGANIZATION.md).
 
+**MATDO-E paper-aligned runtime:** the installable package `matdo_new` and its tests live under [`MATDO-new/`](MATDO-new/README.md) (`pip install -e MATDO-new`). It bridges to `src/` for `AdaptiveTransformer` at runtime.
+
 **Submission manuscripts (keep at repo root):** `ADN_paper.md` and `matdo-e_paper.md` are the publication-target papers; when reorganizing folders, do **not** move them into `docs/` or elsewhere.
 
 ## Architecture
@@ -74,6 +76,11 @@ For the canonical directory map (root layout, `docs/`, `experiments/`, `src/`, `
   - step() for O(L) per-token generation (API ready)
   - generate() with performance stats
 - **Target**: Maintain ~30% adaptation rate
+
+### QASP (`QASP/`)
+
+- **Canonical semantics (Path A):** Value-weighted AttnRes and block statistics in `QASP_paper.tex` are defined on a **single full-sequence forward** over a fixed context. Use `QASPTransformer.forward` or `prefill` for that definition.
+- **Incremental `step`:** With `use_attnres=True`, block summaries use a **growing prefix**; logits need not match `forward` on the extended sequence. Documented in `QASP/__init__.py`, `QASP/models/qasp_transformer.py`, and `tests/integration/test_qasp_prefill_step_numeric_parity.py`.
 
 ### qTTT
 
