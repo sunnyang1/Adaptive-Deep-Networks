@@ -14,7 +14,11 @@ from dataclasses import dataclass
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from experiments.matdo.common.config import config
-from experiments.matdo.common.real_model_bridge import load_matdo_model, evaluate_on_task
+from experiments.matdo.common.real_model_bridge import (
+    evaluate_on_task,
+    load_matdo_model,
+    needle_paper_runtime_kwargs,
+)
 
 
 @dataclass
@@ -80,10 +84,17 @@ def evaluate_rabitq_only(rho: float) -> AblationResult:
         model, cfg = _get_shared_model()
         _set_flags(cfg, enable_rabitq=True, enable_attnres=False, enable_qttt=False)
         result = evaluate_on_task(
-            model, "needle", cfg,
+            model,
+            "needle",
+            cfg,
             device=config.device,
             context_lengths=config.real_model_context_lengths,
             num_samples=config.real_model_num_samples,
+            **needle_paper_runtime_kwargs(
+                config,
+                rho_hbm=float(rho),
+                use_paper_runtime=bool(getattr(config, "us5_use_paper_runtime", False)),
+            ),
         )
         accuracy = result["average_accuracy"] / 100.0
         return AblationResult(
@@ -123,10 +134,17 @@ def evaluate_attnres_only(rho: float) -> AblationResult:
         model, cfg = _get_shared_model()
         _set_flags(cfg, enable_rabitq=False, enable_attnres=True, enable_qttt=False)
         result = evaluate_on_task(
-            model, "needle", cfg,
+            model,
+            "needle",
+            cfg,
             device=config.device,
             context_lengths=config.real_model_context_lengths,
             num_samples=config.real_model_num_samples,
+            **needle_paper_runtime_kwargs(
+                config,
+                rho_hbm=float(rho),
+                use_paper_runtime=bool(getattr(config, "us5_use_paper_runtime", False)),
+            ),
         )
         accuracy = result["average_accuracy"] / 100.0
         return AblationResult(
@@ -166,10 +184,17 @@ def evaluate_qttt_only(rho: float) -> AblationResult:
         model, cfg = _get_shared_model()
         _set_flags(cfg, enable_rabitq=False, enable_attnres=False, enable_qttt=True)
         result = evaluate_on_task(
-            model, "needle", cfg,
+            model,
+            "needle",
+            cfg,
             device=config.device,
             context_lengths=config.real_model_context_lengths,
             num_samples=config.real_model_num_samples,
+            **needle_paper_runtime_kwargs(
+                config,
+                rho_hbm=float(rho),
+                use_paper_runtime=bool(getattr(config, "us5_use_paper_runtime", False)),
+            ),
         )
         accuracy = result["average_accuracy"] / 100.0
         return AblationResult(
@@ -214,10 +239,17 @@ def evaluate_matdo_full(rho: float) -> AblationResult:
         model, cfg = _get_shared_model()
         _set_flags(cfg, enable_rabitq=True, enable_attnres=True, enable_qttt=True)
         result = evaluate_on_task(
-            model, "needle", cfg,
+            model,
+            "needle",
+            cfg,
             device=config.device,
             context_lengths=config.real_model_context_lengths,
             num_samples=config.real_model_num_samples,
+            **needle_paper_runtime_kwargs(
+                config,
+                rho_hbm=float(rho),
+                use_paper_runtime=bool(getattr(config, "us5_use_paper_runtime", False)),
+            ),
         )
         accuracy = result["average_accuracy"] / 100.0
         return AblationResult(

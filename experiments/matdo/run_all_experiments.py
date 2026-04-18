@@ -51,6 +51,9 @@ def run_all_matdo_experiments(
     paper_rho_dram: float = 0.30,
     us4_use_paper_runtime: Optional[bool] = None,
     us4_paper_rho_dram: Optional[float] = None,
+    us5_use_paper_runtime: Optional[bool] = None,
+    us6_use_paper_runtime: Optional[bool] = None,
+    us6_paper_rho_hbm: Optional[float] = None,
 ) -> Dict:
     """
     运行所有MATDO实验
@@ -71,6 +74,8 @@ def run_all_matdo_experiments(
         paper_rho_hbm / paper_rho_dram: 传给 MATDO-new 的运行时观测
         us4_use_paper_runtime: 若为 True/False，写入 ``config.us4_use_paper_runtime``（US4 真实模型走 MATDO-new runtime）
         us4_paper_rho_dram: 若给定，写入 ``config.us4_paper_rho_dram``
+        us5_use_paper_runtime / us6_use_paper_runtime: 若给定，写入对应 ``config`` 开关（US5/US6 Needle 与 US4 一致）
+        us6_paper_rho_hbm: 若给定，写入 ``config.us6_paper_rho_hbm``
 
     Returns:
         all_results: 所有实验结果汇总
@@ -107,6 +112,12 @@ def run_all_matdo_experiments(
         matdo_config.us4_use_paper_runtime = bool(us4_use_paper_runtime)
     if us4_paper_rho_dram is not None:
         matdo_config.us4_paper_rho_dram = float(us4_paper_rho_dram)
+    if us5_use_paper_runtime is not None:
+        matdo_config.us5_use_paper_runtime = bool(us5_use_paper_runtime)
+    if us6_use_paper_runtime is not None:
+        matdo_config.us6_use_paper_runtime = bool(us6_use_paper_runtime)
+    if us6_paper_rho_hbm is not None:
+        matdo_config.us6_paper_rho_hbm = float(us6_paper_rho_hbm)
 
     paper_policy_payload: Optional[Dict] = None
     if use_paper_policy:
@@ -411,6 +422,23 @@ if __name__ == "__main__":
         metavar="RHO",
         help="传给 evaluate_needle_haystack 的 rho_dram（默认用 config.us4_paper_rho_dram）",
     )
+    parser.add_argument(
+        "--us5-paper-runtime",
+        action="store_true",
+        help="US5 真实模型 Needle 走 MATDO-new runtime（与 --us4-paper-runtime 一致；需 --use-real-model）",
+    )
+    parser.add_argument(
+        "--us6-paper-runtime",
+        action="store_true",
+        help="US6 真实模型 Needle 走 MATDO-new runtime（需 --use-real-model）",
+    )
+    parser.add_argument(
+        "--us6-paper-rho-hbm",
+        type=float,
+        default=None,
+        metavar="RHO",
+        help="US6 paper runtime 的 rho_hbm（默认 config.us6_paper_rho_hbm）",
+    )
 
     args = parser.parse_args()
 
@@ -434,4 +462,7 @@ if __name__ == "__main__":
         paper_rho_dram=args.paper_rho_dram,
         us4_use_paper_runtime=True if args.us4_paper_runtime else None,
         us4_paper_rho_dram=args.us4_paper_rho_dram,
+        us5_use_paper_runtime=True if args.us5_paper_runtime else None,
+        us6_use_paper_runtime=True if args.us6_paper_runtime else None,
+        us6_paper_rho_hbm=args.us6_paper_rho_hbm,
     )

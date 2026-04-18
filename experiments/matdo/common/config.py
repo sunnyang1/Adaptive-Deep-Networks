@@ -95,6 +95,11 @@ class MATDOConfig:
     us4_use_paper_runtime: bool = False
     us4_paper_rho_dram: float = 0.30
 
+    # US5 / US6：与 US4 一致，Needle 评估可走 MATDO-new + ``solve_policy`` 物化策略
+    us5_use_paper_runtime: bool = False
+    us6_use_paper_runtime: bool = False
+    us6_paper_rho_hbm: float = 0.9
+
     # Engram索引配置
     engram_index_path: Optional[str] = None
     engram_async_workers: int = 4

@@ -8,58 +8,36 @@ import sys
 import json
 import numpy as np
 from pathlib import Path
-from typing import List, Tuple, Optional
 from dataclasses import dataclass
+from typing import List, Tuple, Optional, Any, Dict
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from experiments.matdo.common.config import config
-from experiments.matdo.common.real_model_bridge import load_matdo_model, evaluate_on_task
+from experiments.matdo.common.real_model_bridge import (
+    evaluate_on_task,
+    load_matdo_model,
+    load_matdo_online_rls_estimator_class,
+    needle_paper_runtime_kwargs,
+)
 
 
 @dataclass
 class RLSState:
-    """RLS算法状态"""
-    theta: np.ndarray  # 参数估计 [δ, ε]
-    P: np.ndarray      # 协方差矩阵
-    lambda_: float     # 遗忘因子
+    """RLS state (legacy scaled-feature regression for US6 acceptance)."""
+
+    theta: np.ndarray
+    P: np.ndarray
+    lambda_: float
 
 
-def rls_update(
-    state: RLSState,
-    x_t: np.ndarray,
-    y_t: float
-) -> RLSState:
-    """
-    递归最小二乘法更新
-    
-    标准RLS算法:
-    K_t = P_{t-1} x_t / (λ + x_t^T P_{t-1} x_t)
-    θ_t = θ_{t-1} + K_t (y_t - x_t^T θ_{t-1})
-    P_t = (P_{t-1} - K_t x_t^T P_{t-1}) / λ
-    
-    Args:
-        state: 当前RLS状态
-        x_t: 特征向量 [2^{-2R}/M, ln(M)/T]
-        y_t: 观测误差（耦合项的贡献）
-    
-    Returns:
-        new_state: 更新后的状态
-    """
-    # 计算增益
+def rls_update(state: RLSState, x_t: np.ndarray, y_t: float) -> RLSState:
     denom = state.lambda_ + x_t.T @ state.P @ x_t
-    K_t = state.P @ x_t / denom
-    
-    # 更新参数
-    prediction = x_t.T @ state.theta
-    error = y_t - prediction
-    theta_new = state.theta + K_t * error
-    
-    # 更新协方差
-    P_new = (state.P - np.outer(K_t, x_t.T @ state.P)) / state.lambda_
-    
-    return RLSState(theta=theta_new, P=P_new, lambda_=state.lambda_)
+    k_t = state.P @ x_t / denom
+    err = y_t - float(x_t.T @ state.theta)
+    theta_new = state.theta + k_t * err
+    p_new = (state.P - np.outer(k_t, x_t.T @ state.P)) / state.lambda_
+    return RLSState(theta=theta_new, P=p_new, lambda_=state.lambda_)
 
 
 _global_us6_model = None
@@ -84,20 +62,12 @@ def simulate_online_queries(
     num_queries: int,
     true_delta: float = 0.005,
     true_epsilon: float = 0.002
-) -> List[Tuple[np.ndarray, float]]:
+) -> List[Tuple[np.ndarray, float, int, int, int]]:
     """
-    模拟在线查询序列
-    
-    生成(R, M, T)配置和观测误差的序列
-    改进：更好的特征分布和更小的噪声
-    
-    Args:
-        num_queries: 查询数量
-        true_delta: 真实的δ值
-        true_epsilon: 真实的ε值
-    
-    Returns:
-        data: [(x_t, y_t), ...] 列表
+    模拟在线查询序列。
+
+    返回 ``(x_legacy_scaled, y, R, M, T)``：``x`` 使用历史缩放 (×1000 / ×10) 以
+    保持 US6 验收行为；``R,M,T`` 供 MATDO-new 附录 C 特征（无缩放）并行 RLS。
     """
     if config.use_real_model:
         print("  真实模型模式: 在小规模网格上收集实测误差...")
@@ -128,10 +98,17 @@ def simulate_online_queries(
             cfg.max_qttt_steps = min(T, orig_qttt_steps)
             
             result = evaluate_on_task(
-                model, "needle", cfg,
+                model,
+                "needle",
+                cfg,
                 device=config.device,
                 context_lengths=(ctx_len,),
                 num_samples=max(1, config.real_model_num_samples // 2),
+                **needle_paper_runtime_kwargs(
+                    config,
+                    rho_hbm=float(getattr(config, "us6_paper_rho_hbm", 0.9)),
+                    use_paper_runtime=bool(getattr(config, "us6_use_paper_runtime", False)),
+                ),
             )
             cfg.max_qttt_steps = orig_qttt_steps
             
@@ -147,7 +124,7 @@ def simulate_online_queries(
             x1 = (2.0 ** (-2 * R)) / M * 1000
             x2 = np.log(M) / T * 10
             x_t = np.array([x1, x2])
-            data.append((x_t, y_t))
+            data.append((x_t, y_t, R, M, T))
         
         return data
 
@@ -161,16 +138,15 @@ def simulate_online_queries(
         M = np.random.randint(16, 128)  # 增大M范围
         T = np.random.choice([8, 16, 32, 64, 128])  # 增大T范围
         
-        # 计算特征（使用归一化）
-        x1 = (2.0 ** (-2 * R)) / M * 1000  # 放大以改善数值稳定性
-        x2 = np.log(M) / T * 10  # 放大以改善数值稳定性
+        x1 = (2.0 ** (-2 * R)) / M * 1000
+        x2 = np.log(M) / T * 10
         x_t = np.array([x1, x2])
         
         # 生成观测（真实耦合项 + 小噪声）
         y_t = true_delta * x1 + true_epsilon * x2
         y_t += np.random.normal(0, 0.0005)  # 减小观测噪声
         
-        data.append((x_t, y_t))
+        data.append((x_t, y_t, R, M, T))
     
     return data
 
@@ -204,19 +180,19 @@ def run_online_identification(
     print(f"遗忘因子 λ: {lambda_}")
     print()
     
-    # 真实值（用于评估）- 注意 simulate_online_queries 内部有缩放
-    # 真实系数在缩放后的特征空间中
     true_delta = config.delta
     true_epsilon = config.epsilon
     
     print(f"真实值: δ={true_delta:.4f}, ε={true_epsilon:.4f}")
-    print("注意：特征已缩放 (x1*1000, x2*10) 以改善数值稳定性")
+    print("Legacy RLS 特征: x1·1000, x2·10（与历史 US6 验收一致）")
+    print("MATDO-new 并行 RLS: x1=2^(-2R)/M, x2=ln(M)/T（附录 C / solve_policy）")
     print()
     
-    # 初始化RLS - 使用更大的初始协方差
-    theta_0 = np.array([0.0, 0.0])  # 初始猜测
-    P_0 = np.eye(2) * 100  # 更大的初始不确定性
-    state = RLSState(theta=theta_0, P=P_0, lambda_=lambda_)
+    theta_0 = np.array([0.0, 0.0])
+    p_0 = np.eye(2) * 100.0
+    state = RLSState(theta=theta_0, P=p_0, lambda_=lambda_)
+    OnlineRLSEstimator = load_matdo_online_rls_estimator_class()
+    paper_rls = OnlineRLSEstimator(lambda_=lambda_)
     
     # 生成数据
     data = simulate_online_queries(num_queries, true_delta, true_epsilon)
@@ -232,8 +208,16 @@ def run_online_identification(
     convergence_step = None
     window_size = 20  # 滑动窗口大小
     
-    for t, (x_t, y_t) in enumerate(data):
-        # RLS更新
+    for t, (x_t, y_t, R, M, T) in enumerate(data):
+        m_safe = max(int(M), 1)
+        t_safe = max(int(T), 1)
+        x_paper = np.array(
+            [
+                (2.0 ** (-2 * R)) / m_safe,
+                np.log(m_safe) / t_safe,
+            ]
+        )
+        paper_rls.update(x_paper, y_t)
         state = rls_update(state, x_t, y_t)
         
         # 记录
@@ -263,7 +247,7 @@ def run_online_identification(
         if (t + 1) % 40 == 0:
             print(f"  Step {t+1}: δ={delta_est:.4f}, ε={epsilon_est:.4f}, error={error:.4f}")
     
-    # 最终结果
+    # 最终结果（legacy 缩放空间，与历史验收一致）
     final_delta, final_epsilon = state.theta
     final_error = np.sqrt((final_delta - true_delta)**2 + (final_epsilon - true_epsilon)**2)
     relative_error = final_error / np.sqrt(true_delta**2 + true_epsilon**2)
@@ -285,6 +269,31 @@ def run_online_identification(
     print(f"  收敛步数 < 150: {convergence_step if convergence_step else 'N/A'} {'✅' if converged else '❌'}")
     print(f"  相对误差 < 15%: {relative_error*100:.2f}% {'✅' if error_small else '❌'}")
     
+    matdo_policy_sample: Optional[Dict[str, Any]] = None
+    try:
+        from matdo_new.core.config import MATDOConfig as PaperCfg
+        from matdo_new.core.policy import RuntimeObservation, solve_policy
+
+        oe = paper_rls.to_online_estimate()
+        dec = solve_policy(
+            RuntimeObservation(
+                rho_hbm=float(getattr(config, "us6_paper_rho_hbm", 0.9)),
+                rho_dram=float(getattr(config, "us4_paper_rho_dram", 0.30)),
+            ),
+            PaperCfg(),
+            oe,
+        )
+        matdo_policy_sample = {
+            "quantization_bits": dec.quantization_bits,
+            "m_blocks": dec.m_blocks,
+            "t_steps": dec.t_steps,
+            "engram_entries": dec.engram_entries,
+            "use_engram": dec.use_engram,
+            "reason": dec.reason,
+        }
+    except Exception:
+        matdo_policy_sample = None
+
     # 保存结果
     results = {
         'parameters': {
@@ -296,6 +305,9 @@ def run_online_identification(
         'estimates': {
             'delta': float(final_delta),
             'epsilon': float(final_epsilon)
+        },
+        'matdo_new': {
+            'policy_with_online_estimate': matdo_policy_sample,
         },
         'history': history,
         'metrics': {

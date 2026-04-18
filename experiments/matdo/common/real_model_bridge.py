@@ -27,6 +27,31 @@ def _ensure_matdo_new_on_path() -> None:
         sys.path.insert(0, str(_MATDO_NEW_ROOT))
 
 
+def needle_paper_runtime_kwargs(
+    legacy: Any,
+    *,
+    rho_hbm: float,
+    use_paper_runtime: bool,
+) -> Dict[str, Any]:
+    """Keyword args for :func:`evaluate_needle_haystack` / US4–US6 paper alignment."""
+    if not use_paper_runtime:
+        return {}
+    rho_dram = float(getattr(legacy, "us4_paper_rho_dram", 0.30))
+    return {
+        "use_paper_runtime": True,
+        "rho_hbm": float(rho_hbm),
+        "rho_dram": rho_dram,
+    }
+
+
+def load_matdo_online_rls_estimator_class() -> Any:
+    """Return :class:`matdo_new.core.online_estimation.OnlineRLSEstimator` (lazy import)."""
+    _ensure_matdo_new_on_path()
+    from matdo_new.core.online_estimation import OnlineRLSEstimator
+
+    return OnlineRLSEstimator
+
+
 def _greedy_argmax_sampler(logits: object | None) -> int:
     if logits is None:
         raise RuntimeError("backend returned no logits for sampling")
