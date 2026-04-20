@@ -185,3 +185,146 @@ def test_qasp_transformer_forward_without_attnres_or_engram() -> None:
     logits = model(input_ids)
 
     assert logits.shape == (2, 6, 64)
+
+
+def test_gqa_kv_heads_smaller_than_query_heads() -> None:
+    """GQA should reduce K/V param count and still produce correct output shape."""
+
+    from QASP.models.components import CausalSelfAttention, QASPTransformerConfig
+
+    config = QASPTransformerConfig(
+        hidden_size=64,
+        num_heads=8,
+        num_key_value_heads=2,
+    )
+    attn = CausalSelfAttention(config)
+    hidden = torch.randn(2, 5, 64)
+
+    out = attn(hidden)
+    assert out.shape == (2, 5, 64)
+
+    # K/V projection should have fewer parameters
+    assert attn.k_proj.weight.shape[0] == config.num_key_value_heads * (config.hidden_size // config.num_heads)
+    assert attn.v_proj.weight.shape[0] == config.num_key_value_heads * (config.hidden_size // config.num_heads)
+
+
+def test_gqa_forward_with_cache_shape() -> None:
+    """GQA forward_with_cache should return K/V with reduced head count."""
+
+    from QASP.models.components import CausalSelfAttention, QASPTransformerConfig
+
+    config = QASPTransformerConfig(
+        hidden_size=64,
+        num_heads=8,
+        num_key_value_heads=2,
+    )
+    attn = CausalSelfAttention(config)
+    hidden = torch.randn(2, 5, 64)
+
+    out, k, v = attn.forward_with_cache(hidden)
+    assert out.shape == (2, 5, 64)
+    assert k.shape == (2, 2, 5, 8)  # [B, H_kv, T, d_h]
+    assert v.shape == (2, 2, 5, 8)
+
+
+def test_gqa_step_shape() -> None:
+    """GQA step should accumulate K/V with reduced head count."""
+
+    from QASP.models.components import CausalSelfAttention, QASPTransformerConfig
+
+    config = QASPTransformerConfig(
+        hidden_size=64,
+        num_heads=8,
+        num_key_value_heads=2,
+    )
+    attn = CausalSelfAttention(config)
+    hidden = torch.randn(2, 1, 64)
+
+    out, k, v = attn.step(hidden, cached_k=None, cached_v=None)
+    assert out.shape == (2, 1, 64)
+    assert k.shape == (2, 2, 1, 8)
+    assert v.shape == (2, 2, 1, 8)
+
+    # Second step should concatenate along time dim
+    out2, k2, v2 = attn.step(hidden, cached_k=k, cached_v=v)
+    assert k2.shape == (2, 2, 2, 8)
+    assert v2.shape == (2, 2, 2, 8)
+
+
+def test_rope_changes_qk_phases() -> None:
+    """RoPE should rotate Q/K embeddings and produce different logits than no-RoPE."""
+
+    from QASP.models.components import CausalSelfAttention, QASPTransformerConfig
+
+    config = QASPTransformerConfig(
+        hidden_size=64,
+        num_heads=4,
+        use_rope=True,
+    )
+    attn = CausalSelfAttention(config)
+    hidden = torch.randn(1, 5, 64)
+
+    from QASP.models.rope import RotaryEmbedding, apply_rotary_pos_emb
+    rope = RotaryEmbedding(dim=16, max_position_embeddings=8)
+    cos, sin = rope(hidden, seq_len=5)
+
+    out = attn(hidden, rope_cos=cos, rope_sin=sin)
+    assert out.shape == (1, 5, 64)
+
+    # Output should differ from no-RoPE path
+    out_no_rope = attn(hidden, rope_cos=None, rope_sin=None)
+    assert not torch.allclose(out, out_no_rope, atol=1e-3)
+
+
+def test_rope_preserves_norms() -> None:
+    """RoPE rotation should preserve vector norms."""
+
+    from QASP.models.rope import RotaryEmbedding, apply_rotary_pos_emb
+
+    rope = RotaryEmbedding(dim=16, max_position_embeddings=8)
+    q = torch.randn(1, 4, 5, 16)
+    k = torch.randn(1, 2, 5, 16)
+    cos, sin = rope(q, seq_len=5)
+
+    q_rot, k_rot = apply_rotary_pos_emb(q, k, cos, sin)
+    assert torch.allclose(q.norm(dim=-1), q_rot.norm(dim=-1), atol=1e-5)
+    assert torch.allclose(k.norm(dim=-1), k_rot.norm(dim=-1), atol=1e-5)
+
+
+def test_transformer_forward_with_rope() -> None:
+    """QASPTransformer should work with use_rope=True and no position embeddings."""
+
+    model = create_qasp_transformer(
+        vocab_size=128,
+        hidden_size=64,
+        num_heads=4,
+        num_layers=2,
+        max_position_embeddings=64,
+        use_rope=True,
+        use_attnres=False,
+        use_engram=False,
+    )
+    input_ids = torch.randint(0, 128, (2, 11))
+    logits = model(input_ids)
+    assert logits.shape == (2, 11, 128)
+    assert model.position_embedding is None
+    assert model.rope is not None
+
+
+def test_paper_1_5b_preset() -> None:
+    """The paper_1_5b preset should instantiate the claimed architecture."""
+
+    model = create_qasp_transformer(preset="paper_1_5b")
+    cfg = model.config
+
+    assert cfg.hidden_size == 2048
+    assert cfg.num_layers == 24
+    assert cfg.num_heads == 16
+    assert cfg.num_key_value_heads == 4
+    assert cfg.vocab_size == 32000
+    assert cfg.max_position_embeddings == 4096
+    assert cfg.use_rope is True
+
+    params = sum(p.numel() for p in model.parameters())
+    # Paper claims ~1.5B; actual count with these dims is ~1.3B (depends on exact SwiGLU sizing)
+    assert 1.2e9 < params < 1.6e9, f"Expected ~1.5B params, got {params/1e9:.2f}B"

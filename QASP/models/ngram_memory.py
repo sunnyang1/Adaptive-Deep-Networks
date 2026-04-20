@@ -86,6 +86,44 @@ class NgramMemory:
         return self.values[idx], self.qualities[idx], bool(self.populated[idx].item())
 
     @torch.no_grad()
+    def batch_write(
+        self,
+        input_ids: Tensor,
+        vectors: Tensor,
+        qualities: Tensor,
+    ) -> None:
+        """Write n-gram memories for every valid position in ``input_ids``.
+
+        Args:
+            input_ids: ``[B, T]`` token indices.
+            vectors: ``[B, T, D]`` per-token vectors to store (typically hidden
+                states at the last token of each n-gram).
+            qualities: ``[B, T]`` per-token quality scores.  The mean over the
+                n-gram window is stored alongside each entry.
+        """
+
+        if input_ids.ndim != 2:
+            raise ValueError("`input_ids` must have shape [B, T].")
+        if vectors.shape[:2] != input_ids.shape:
+            raise ValueError("`vectors` batch/seq dims must match `input_ids`.")
+        if qualities.shape != input_ids.shape:
+            raise ValueError("`qualities` must have shape [B, T].")
+
+        batch_size, seq_len = input_ids.shape
+        ids_cpu = input_ids.detach().cpu().tolist()
+        quals_cpu = qualities.detach().cpu().tolist()
+
+        for b in range(batch_size):
+            row = ids_cpu[b]
+            row_quals = quals_cpu[b]
+            for t in range(self.n_gram - 1, seq_len):
+                ngram = row[t - self.n_gram + 1 : t + 1]
+                qual_window = row_quals[t - self.n_gram + 1 : t + 1]
+                mean_qual = sum(qual_window) / len(qual_window)
+                vec = vectors[b, t]
+                self.write(ngram, vec, mean_qual)
+
+    @torch.no_grad()
     def batch_lookup(
         self,
         input_ids: Tensor,

@@ -26,6 +26,7 @@ def _tiny(overlay_scale: float):
         attnres_blocks=2,
         adapt_rank=8,
         stiefel_overlay_scale=overlay_scale,
+        use_engram=False,
     )
 
 

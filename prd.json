@@ -1,0 +1,122 @@
+{
+  "project": "QASP Open Gap Fixes",
+  "branch": "qasp-gap-fixes",
+  "complexity": "complex",
+  "userStories": [
+    {
+      "id": "QASP-ARCH-1",
+      "title": "GQA Support in CausalSelfAttention",
+      "description": "Add num_key_value_heads to config and implement grouped query attention with K/V broadcast.",
+      "acceptance": [
+        "QASPTransformerConfig gains num_key_value_heads",
+        "CausalSelfAttention reshapes K/V to num_key_value_heads * head_dim",
+        "K/V broadcast to num_heads before SDPA",
+        "All existing tests pass",
+        "New test verifies GQA shape correctness"
+      ],
+      "priority": 1,
+      "estimated_minutes": 5,
+      "passes": true
+    },
+    {
+      "id": "QASP-ARCH-2",
+      "title": "RoPE Position Embedding",
+      "description": "Add Rotary Position Embeddings as optional replacement for learned absolute embeddings.",
+      "acceptance": [
+        "Add QASP.models.rope module with RotaryEmbedding",
+        "Config gains use_rope bool (default False)",
+        "CausalSelfAttention applies RoPE to Q/K when enabled",
+        "Existing tests pass with use_rope=False",
+        "New test verifies RoPE changes phases but preserves norms"
+      ],
+      "priority": 2,
+      "estimated_minutes": 5,
+      "passes": true
+    },
+    {
+      "id": "QASP-ARCH-3",
+      "title": "1.5B Paper Configuration Preset",
+      "description": "Add factory preset for the paper's 1.5B model architecture.",
+      "acceptance": [
+        "QASPTransformerConfig.paper_1_5b() classmethod exists",
+        "create_qasp_transformer(preset='paper_1_5b') works",
+        "Test confirms param count within 5% of 1.5B"
+      ],
+      "priority": 3,
+      "estimated_minutes": 3,
+      "passes": true
+    },
+    {
+      "id": "QASP-TRAIN-1",
+      "title": "Training Skeleton (train.py)",
+      "description": "Add a minimal but real training script with AdamW, cosine schedule, BF16, and checkpointing.",
+      "acceptance": [
+        "QASP/scripts/train.py exists with full argparse",
+        "Uses HF datasets + tokenizers",
+        "Logs to console and TensorBoard",
+        "Saves checkpoints",
+        "--quick smoke test mode completes without error"
+      ],
+      "priority": 4,
+      "estimated_minutes": 5,
+      "passes": true
+    },
+    {
+      "id": "QASP-BRIDGE-1",
+      "title": "Optional src/ ADN Bridge",
+      "description": "Create integration module so QASP can optionally reuse src.attnres, src.rabitq, src.engram.",
+      "acceptance": [
+        "QASP.integration module with try_import_src_* helpers",
+        "Config gains use_src_bridge bool (default False)",
+        "When enabled, uses src modules instead of local reimplementations",
+        "Graceful fallback when src/ unavailable",
+        "Test verifies bridge and fallback"
+      ],
+      "priority": 5,
+      "estimated_minutes": 5,
+      "passes": true
+    },
+    {
+      "id": "QASP-BENCH-1",
+      "title": "Real Benchmark Runners",
+      "description": "Replace stub benchmark functions with real evaluation pipelines.",
+      "acceptance": [
+        "run_math_eval runs model on HF math dataset",
+        "run_qasp_ablation toggles components and measures real deltas",
+        "profile_qasp measures actual tokens/sec, memory, latency",
+        "All accept model=None and fall back to stubs for CI",
+        "Integration tests verify real-mode on tiny model"
+      ],
+      "priority": 6,
+      "estimated_minutes": 5,
+      "passes": true
+    },
+    {
+      "id": "QASP-OPT-1",
+      "title": "Ponder-Gated Quality Computation",
+      "description": "Wire up gate_quality_computation so step() skips quality FFT when ponder gate is off.",
+      "acceptance": [
+        "gate_quality_computation=True skips compute_quality_score in step() when gate off",
+        "Uses cached quality from prefill when available",
+        "Test verifies fewer FFT calls when gating is on",
+        "Existing parity tests still pass (with gating off)"
+      ],
+      "priority": 7,
+      "estimated_minutes": 5,
+      "passes": true
+    },
+    {
+      "id": "QASP-DOC-1",
+      "title": "README and Documentation Update",
+      "description": "Add QASP/README.md documenting real vs stub benchmarks and architecture options.",
+      "acceptance": [
+        "QASP/README.md exists with architecture table",
+        "Lists which benchmarks are real vs stub",
+        "Documents all new config flags"
+      ],
+      "priority": 8,
+      "estimated_minutes": 3,
+      "passes": true
+    }
+  ]
+}

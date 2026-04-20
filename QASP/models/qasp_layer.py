@@ -34,9 +34,14 @@ class QASPLayer(nn.Module):
         self.attnres = ValueWeightedAttnRes(config.hidden_size) if self.use_attnres else None
         self.engram = ValueWeightedEngram(config.hidden_size) if self.use_engram else None
 
-        rank = max(1, min(config.adapt_rank, config.hidden_size))
+        if config.use_stiefel_query:
+            rank = config.hidden_size
+            init_iters = 15  # square matrices need more Newton-Schulz iterations
+        else:
+            rank = max(1, min(config.adapt_rank, config.hidden_size))
+            init_iters = 5
         with torch.no_grad():
-            init_matrix = project_to_stiefel(torch.randn(config.hidden_size, rank))
+            init_matrix = project_to_stiefel(torch.randn(config.hidden_size, rank), num_iters=init_iters)
         self.stiefel_query = nn.Parameter(init_matrix, requires_grad=False)
 
     def forward(
@@ -46,10 +51,14 @@ class QASPLayer(nn.Module):
         block_quality: Tensor | None = None,
         memory_vector: Tensor | None = None,
         memory_quality: Tensor | None = None,
+        rope_cos: Tensor | None = None,
+        rope_sin: Tensor | None = None,
     ) -> Tensor:
         hidden_states = hidden_states + self.attn(
             self.attn_norm(hidden_states),
             stiefel_query=self.stiefel_query,
+            rope_cos=rope_cos,
+            rope_sin=rope_sin,
         )
 
         if self.attnres is not None and block_representations is not None and block_quality is not None:
@@ -74,6 +83,8 @@ class QASPLayer(nn.Module):
         memory_vector: Tensor | None = None,
         memory_quality: Tensor | None = None,
         kv_codec: _KVCodec | None = None,
+        rope_cos: Tensor | None = None,
+        rope_sin: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Full-sequence forward that also emits per-layer K/V for cache prefill."""
 
@@ -81,6 +92,8 @@ class QASPLayer(nn.Module):
             self.attn_norm(hidden_states),
             codec=kv_codec,
             stiefel_query=self.stiefel_query,
+            rope_cos=rope_cos,
+            rope_sin=rope_sin,
         )
         hidden_states = hidden_states + attn_out
 
@@ -108,6 +121,8 @@ class QASPLayer(nn.Module):
         memory_vector: Tensor | None = None,
         memory_quality: Tensor | None = None,
         kv_codec: _KVCodec | None = None,
+        rope_cos: Tensor | None = None,
+        rope_sin: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Incremental single-token forward that reuses cached K/V.
 
@@ -124,6 +139,8 @@ class QASPLayer(nn.Module):
             cached_v=cached_v,
             codec=kv_codec,
             stiefel_query=self.stiefel_query,
+            rope_cos=rope_cos,
+            rope_sin=rope_sin,
         )
         hidden_new = hidden_new + attn_out
 

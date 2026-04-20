@@ -25,7 +25,8 @@ def project_to_stiefel(
     matrix: torch.Tensor,
     num_iters: int = 5,
     eps: float = 1e-6,
-) -> torch.Tensor:
+    return_diagnostics: bool = False,
+) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
     """Project ``matrix`` onto the Stiefel manifold via Newton-Schulz.
 
     Args:
@@ -37,6 +38,9 @@ def project_to_stiefel(
 
     Returns:
         A ``[d, k]`` tensor whose columns are approximately orthonormal.
+        If ``return_diagnostics`` is True, returns a tuple of
+        ``(projected_tensor, diagnostics_dict)`` where the dict contains
+        ``orthogonality_error`` = ``||I - Y^T Y||_F`` after the final iteration.
     """
 
     if matrix.ndim != 2:
@@ -60,4 +64,10 @@ def project_to_stiefel(
         gram = y.transpose(-2, -1) @ y
         y = 0.5 * y @ (3.0 * eye - gram)
 
-    return cast(torch.Tensor, y)
+    projected = cast(torch.Tensor, y)
+    if not return_diagnostics:
+        return projected
+
+    final_gram = projected.transpose(-2, -1) @ projected
+    ortho_error = torch.linalg.matrix_norm(final_gram - eye, ord="fro").item()
+    return projected, {"orthogonality_error": ortho_error}

@@ -8,13 +8,14 @@ from QASP.inference import IncrementalInference, QASPGenerator
 from QASP.models import create_qasp_transformer
 
 
-def _build_tiny_model():
+def _build_tiny_model(use_engram: bool = True):
     model = create_qasp_transformer(
         vocab_size=64,
         hidden_size=32,
         num_heads=4,
         num_layers=2,
         max_position_embeddings=64,
+        use_engram=use_engram,
     )
     model.eval()
     return model
@@ -46,7 +47,7 @@ def test_prefill_logits_match_full_forward():
     """prefill() must emit the same [B, T, V] logits as a plain forward pass."""
 
     torch.manual_seed(0)
-    model = _build_tiny_model()
+    model = _build_tiny_model(use_engram=False)
     model.eval()
 
     input_ids = torch.tensor([[3, 14, 1, 5, 9]], dtype=torch.long)

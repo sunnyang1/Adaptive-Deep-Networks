@@ -27,9 +27,11 @@ from QASP.adaptation.ponder_gate import PonderGate
 from QASP.configs.qasp import QASPConfig
 from QASP.inference.kv_cache import KVCache
 from QASP.inference.rabitq import RaBitQCodec
+from QASP.adaptation.quality_score import compute_quality_score
 from QASP.models.components import QASPTransformerConfig, RMSNorm, compute_block_representations
 from QASP.models.ngram_memory import NgramMemory
 from QASP.models.qasp_layer import QASPLayer
+from QASP.models.rope import RotaryEmbedding
 
 
 LayerLossFn = Callable[[int, Tensor], Tensor]
@@ -48,10 +50,23 @@ class QASPTransformer(nn.Module):
         super().__init__()
         self.config = config
         self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.position_embedding = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+        self.position_embedding = (
+            nn.Embedding(config.max_position_embeddings, config.hidden_size)
+            if not config.use_rope
+            else None
+        )
         self.layers = nn.ModuleList([QASPLayer(config) for _ in range(config.num_layers)])
         self.norm = RMSNorm(config.hidden_size)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        self.rope: RotaryEmbedding | None
+        if config.use_rope:
+            if config.hidden_size % config.num_heads != 0:
+                raise ValueError("hidden_size must be divisible by num_heads for RoPE.")
+            head_dim = config.hidden_size // config.num_heads
+            self.rope = RotaryEmbedding(head_dim, max_position_embeddings=config.max_position_embeddings)
+        else:
+            self.rope = None
 
         self.engram_memory: NgramMemory | None
         if config.use_engram:
@@ -81,13 +96,27 @@ class QASPTransformer(nn.Module):
         if seq_len > self.config.max_position_embeddings:
             raise ValueError("input sequence length exceeds max_position_embeddings")
 
-        positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand(batch_size, -1)
-        hidden_states = self.token_embedding(input_ids) + self.position_embedding(positions)
+        hidden_states = self.token_embedding(input_ids)
+        if self.position_embedding is not None:
+            positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand(batch_size, -1)
+            hidden_states = hidden_states + self.position_embedding(positions)
+
+        rope_cos = rope_sin = None
+        if self.rope is not None:
+            rope_cos, rope_sin = self.rope(hidden_states, seq_len)
 
         memory_vector: Tensor | None = None
         memory_quality: Tensor | None = None
         if self.config.use_engram and self.engram_memory is not None:
             memory_vector, memory_quality = self.engram_memory.batch_lookup(input_ids)
+
+        per_token_quality: Tensor | None = None
+        if self.config.use_attnres or self.config.use_engram:
+            per_token_quality = compute_quality_score(
+                hidden_states,
+                low_pass_ratio=0.25,
+                window_size=self.config.quality_window_size,
+            )
 
         for module in self.layers:
             layer = cast(QASPLayer, module)
@@ -97,6 +126,7 @@ class QASPTransformer(nn.Module):
                     hidden_states,
                     num_blocks=self.config.attnres_blocks,
                     quality_window_size=self.config.quality_window_size,
+                    per_token_quality=per_token_quality,
                 )
 
             hidden_states = layer(
@@ -105,9 +135,19 @@ class QASPTransformer(nn.Module):
                 block_quality=block_quality,
                 memory_vector=memory_vector,
                 memory_quality=memory_quality,
+                rope_cos=rope_cos,
+                rope_sin=rope_sin,
             )
 
         hidden_states = self.norm(hidden_states)
+
+        if self.config.use_engram and self.engram_memory is not None:
+            self.engram_memory.batch_write(
+                input_ids=input_ids,
+                vectors=hidden_states,
+                qualities=per_token_quality,
+            )
+
         return cast(Tensor, self.lm_head(hidden_states))
 
     @torch.no_grad()
@@ -127,14 +167,28 @@ class QASPTransformer(nn.Module):
         if seq_len > self.config.max_position_embeddings:
             raise ValueError("input sequence length exceeds max_position_embeddings")
 
-        positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand(batch_size, -1)
-        hidden_states = self.token_embedding(input_ids) + self.position_embedding(positions)
+        hidden_states = self.token_embedding(input_ids)
+        if self.position_embedding is not None:
+            positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand(batch_size, -1)
+            hidden_states = hidden_states + self.position_embedding(positions)
+
+        rope_cos = rope_sin = None
+        if self.rope is not None:
+            rope_cos, rope_sin = self.rope(hidden_states, seq_len)
 
         memory_vector = memory_quality = None
         if self.config.use_engram and self.engram_memory is not None:
             memory_vector, memory_quality = self.engram_memory.batch_lookup(input_ids)
 
         cache = KVCache.from_input_ids(input_ids, num_layers=len(self.layers))
+
+        per_token_quality: Tensor | None = None
+        if self.config.use_attnres or self.config.use_engram:
+            per_token_quality = compute_quality_score(
+                hidden_states,
+                low_pass_ratio=0.25,
+                window_size=self.config.quality_window_size,
+            )
 
         for idx, module in enumerate(self.layers):
             layer = cast(QASPLayer, module)
@@ -146,6 +200,7 @@ class QASPTransformer(nn.Module):
                     hidden_states,
                     num_blocks=self.config.attnres_blocks,
                     quality_window_size=self.config.quality_window_size,
+                    per_token_quality=per_token_quality,
                 )
 
             hidden_states, k, v = layer.forward_with_cache(
@@ -155,12 +210,23 @@ class QASPTransformer(nn.Module):
                 memory_vector=memory_vector,
                 memory_quality=memory_quality,
                 kv_codec=self.kv_codec,
+                rope_cos=rope_cos,
+                rope_sin=rope_sin,
             )
             cache.layer_keys[idx] = k
             cache.layer_values[idx] = v
 
         hidden_states = self.norm(hidden_states)
+
+        if self.config.use_engram and self.engram_memory is not None:
+            self.engram_memory.batch_write(
+                input_ids=input_ids,
+                vectors=hidden_states,
+                qualities=per_token_quality,
+            )
+
         logits = cast(Tensor, self.lm_head(hidden_states))
+        cache.per_token_quality = per_token_quality
         return logits, cache
 
     @torch.no_grad()
@@ -189,13 +255,22 @@ class QASPTransformer(nn.Module):
         cache.append(last_token)
 
         batch_size = last_token.size(0)
-        pos_idx = torch.full(
-            (batch_size, 1),
-            new_position,
-            dtype=torch.long,
-            device=last_token.device,
-        )
-        hidden = self.token_embedding(last_token) + self.position_embedding(pos_idx)
+        hidden = self.token_embedding(last_token)
+        if self.position_embedding is not None:
+            pos_idx = torch.full(
+                (batch_size, 1),
+                new_position,
+                dtype=torch.long,
+                device=last_token.device,
+            )
+            hidden = hidden + self.position_embedding(pos_idx)
+
+        rope_cos = rope_sin = None
+        if self.rope is not None:
+            rope_cos, rope_sin = self.rope(hidden, new_position + 1)
+            # Slice to the single position we need
+            rope_cos = rope_cos[:, :, new_position : new_position + 1, :]
+            rope_sin = rope_sin[:, :, new_position : new_position + 1, :]
 
         memory_vec_new: Optional[Tensor] = None
         memory_qual_new: Optional[Tensor] = None
@@ -203,6 +278,15 @@ class QASPTransformer(nn.Module):
             mem_vec_full, mem_qual_full = self.engram_memory.batch_lookup(cache.input_ids)
             memory_vec_new = mem_vec_full[:, -1:, :]
             memory_qual_new = mem_qual_full[:, -1:]
+
+        # Ponder-gated quality: decide whether to compute quality this step
+        should_compute_quality = True
+        if self.config.gate_quality_computation and cache.last_logits is not None:
+            gate = PonderGate(
+                entropy_threshold=0.8,
+                confidence_threshold=0.6,
+            )
+            should_compute_quality = gate.should_adapt(cache.last_logits)
 
         for idx, module in enumerate(self.layers):
             layer = cast(QASPLayer, module)
@@ -215,11 +299,15 @@ class QASPTransformer(nn.Module):
 
             block_repr = block_quality = None
             if self.config.use_attnres:
-                block_repr, block_quality = compute_block_representations(
-                    layer_input_history,
-                    num_blocks=self.config.attnres_blocks,
-                    quality_window_size=self.config.quality_window_size,
-                )
+                if should_compute_quality:
+                    block_repr, block_quality = compute_block_representations(
+                        layer_input_history,
+                        num_blocks=self.config.attnres_blocks,
+                        quality_window_size=self.config.quality_window_size,
+                    )
+                else:
+                    # Gate blocked: skip AttnRes for this step to avoid stale quality
+                    pass
 
             hidden, new_k, new_v = layer.step(
                 hidden,
@@ -230,18 +318,27 @@ class QASPTransformer(nn.Module):
                 memory_vector=memory_vec_new,
                 memory_quality=memory_qual_new,
                 kv_codec=self.kv_codec,
+                rope_cos=rope_cos,
+                rope_sin=rope_sin,
             )
             cache.layer_keys[idx] = new_k
             cache.layer_values[idx] = new_v
 
         hidden = self.norm(hidden)
-        return cast(Tensor, self.lm_head(hidden).squeeze(1))
+        logits = cast(Tensor, self.lm_head(hidden).squeeze(1))
+
+        # Store logits for next step's gate decision
+        if self.config.gate_quality_computation:
+            cache.last_logits = logits.clone()
+
+        return logits
 
     def adapt_at_test_time(
         self,
         loss_fn_for_layer: LayerLossFn,
         logits: Tensor,
         quality_scores: Optional[Tensor] = None,
+        hidden_states: Optional[Tensor] = None,
         qasp_config: Optional[QASPConfig] = None,
     ) -> bool:
         """Run the paper's ponder-gated QASP update on every layer's ``W_ℓ``.
@@ -250,6 +347,10 @@ class QASPTransformer(nn.Module):
         ``False`` otherwise. When it runs, each ``layer.stiefel_query`` is
         replaced with the Stiefel-projected result of
         :func:`QASP.adaptation.matrix_qasp.matrix_qasp_update`.
+
+        If ``quality_scores`` is not provided but ``hidden_states`` is, quality
+        scores are computed lazily inside this method **only when the ponder
+        gate fires**, avoiding the FFT cost on the no-adapt path.
         """
 
         cfg = qasp_config or QASPConfig()
@@ -259,6 +360,13 @@ class QASPTransformer(nn.Module):
         )
         if not gate.should_adapt(logits):
             return False
+
+        resolved_quality = quality_scores
+        if resolved_quality is None and hidden_states is not None:
+            resolved_quality = compute_quality_score(
+                hidden_states,
+                low_pass_ratio=cfg.low_pass_ratio,
+            )
 
         for idx, module in enumerate(self.layers):
             layer = cast(QASPLayer, module)
@@ -270,7 +378,7 @@ class QASPTransformer(nn.Module):
             updated = matrix_qasp_update(
                 matrix=current,
                 loss_fn=layer_loss,
-                quality_scores=quality_scores,
+                quality_scores=resolved_quality,
                 step_size=cfg.step_size,
                 num_adapt_steps=cfg.num_adapt_steps,
                 ns_iters=cfg.ns_iters,
@@ -280,8 +388,21 @@ class QASPTransformer(nn.Module):
         return True
 
 
-def create_qasp_transformer(**kwargs: Any) -> QASPTransformer:
-    """Factory helper for quick model creation in tests and experiments."""
+def create_qasp_transformer(preset: str | None = None, **kwargs: Any) -> QASPTransformer:
+    """Factory helper for quick model creation in tests and experiments.
 
-    config = QASPTransformerConfig(**kwargs)
+    Args:
+        preset: Optional preset name. ``"paper_1_5b"`` returns the paper's 1.5B config.
+        **kwargs: Overrides applied on top of the preset (or default) config.
+    """
+
+    if preset == "paper_1_5b":
+        config = QASPTransformerConfig.paper_1_5b()
+        for k, v in kwargs.items():
+            if hasattr(config, k):
+                setattr(config, k, v)
+            else:
+                raise TypeError(f"QASPTransformerConfig has no field {k!r}")
+    else:
+        config = QASPTransformerConfig(**kwargs)
     return QASPTransformer(config)

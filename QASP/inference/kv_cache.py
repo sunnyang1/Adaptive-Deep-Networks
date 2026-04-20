@@ -23,6 +23,8 @@ class KVCache:
     layer_keys: List[Optional[Tensor]] = field(default_factory=list)
     layer_values: List[Optional[Tensor]] = field(default_factory=list)
     layer_inputs: List[Optional[Tensor]] = field(default_factory=list)
+    per_token_quality: Optional[Tensor] = None
+    last_logits: Optional[Tensor] = None
 
     @classmethod
     def from_input_ids(cls, input_ids: Tensor, num_layers: int = 0) -> "KVCache":
@@ -35,6 +37,8 @@ class KVCache:
             layer_keys=[None] * num_layers,
             layer_values=[None] * num_layers,
             layer_inputs=[None] * num_layers,
+            per_token_quality=None,
+            last_logits=None,
         )
 
     @property

@@ -176,6 +176,17 @@ python experiments/run_experiments_unified.py --category paper
 - Paper: Adaptive Deep Networks Final Draft
 - Reference Code: Attention Residuals Technical Report (Chen et al., 2026)
 
+## QASP Package Notes
+
+The `QASP/` package was aligned with its paper manuscript on 2026-04-20. Key fixes applied:
+- **Stiefel query**: Added `use_stiefel_query` config flag. When `True`, `CausalSelfAttention` uses `stiefel_query` directly as the query projection matrix (shape `[d, d]`). Default remains the overlay mode for backward compatibility.
+- **Quality caching**: `compute_quality_score` is called once per `forward`/`prefill` and reused across layers. `adapt_at_test_time` lazily computes quality only when the ponder gate fires.
+- **NgramMemory writes**: `forward` and `prefill` now call `batch_write` so Engram retrieval returns populated entries.
+- **Real benchmarks**: `run_needle_benchmark` performs actual needle insertion + exact-match evaluation instead of returning synthetic stubs.
+- **Stats utilities**: `QASP/experiments/stats.py` provides `paired_t_test`, `bootstrap_ci`, and `cohens_d`.
+- **Generator optimization**: `QASPGenerator` uses `prefill` + `step` when available.
+- All changes are gated behind default-false flags; existing tests pass without modification.
+
 ## Cursor Cloud specific instructions
 
 ### Environment
