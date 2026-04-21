@@ -1,0 +1,26 @@
+runtime:
+  mode: experiments
+  root_config: ../default.yaml
+
+benchmarks:
+  needle:
+    enabled: true
+    dataset:
+      context_lengths: [128]
+      num_samples: 1
+      depth_distribution: uniform
+      seed: 42
+    generation:
+      max_new_tokens: 2
+    runtime:
+      tokenizer_name: gpt2
+      model_size: t4
+      use_attnres: false
+  critical-points:
+    enabled: false
+    dataset:
+      points: [0.25]
+
+output:
+  emit_metadata: true
+  format: json

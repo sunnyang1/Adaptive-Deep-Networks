@@ -1,0 +1,114 @@
+# Adaptive Deep Networks 实验配置
+
+# 模型配置
+model:
+  num_layers: 32
+  hidden_dim: 4096
+  num_heads: 32
+  mlp_ratio: 4
+  vocab_size: 10000
+  max_seq_len: 131072
+
+# Block AttnRes配置
+attnres:
+  num_blocks: 8  # N
+  pseudo_query_init: "zero"  # "zero" or "random"
+
+# qTTT配置
+qttt:
+  default_k: 128
+  default_N: 16
+  learning_rate: 0.005
+  max_steps: 32
+
+# Gating配置
+gating:
+  target_rate: 0.3
+  ema_beta: 0.99
+  threshold_init: 1.0
+
+# 实验1: Representation Burial
+exp1:
+  architectures:
+    - prenorm
+    - postnorm
+    - deepnorm
+    - attnres
+  num_samples: 50
+  seq_len: 512
+  num_layers: 32
+  d_model: 1024
+
+# 实验2: Margin分析
+exp2:
+  context_lengths:
+    - 1024
+    - 4096
+    - 16384
+    - 32768
+    - 65536
+  num_samples: 100
+  needle_positions: 10
+
+# 实验3: 梯度流
+exp3:
+  num_steps: 1000
+  batch_size: 4
+  log_intervals:
+    - 100
+    - 200
+    - 500
+    - 800
+    - 1000
+
+# 实验4: FLOP等价
+exp4:
+  total_flops: 5.0e14
+  context_len: 65536
+  strategies:
+    - pure_width
+    - pure_depth
+    - balanced
+    - depth_priority
+
+# 实验5: 协同效应
+exp5:
+  test_tasks:
+    - needle_haystack_128k
+    - math_level_4_5
+    - longbench_v2
+  num_runs: 3  # 多次运行取平均
+
+# 实验6: 辅助实验
+exp6:
+  initialization:
+    types:
+      - zero
+      - random
+    num_steps: 1000
+  
+  block_sizes:
+    - 4
+    - 8
+    - 16
+    - 32
+  
+  qttt_params:
+    N_values:
+      - 4
+      - 8
+      - 16
+      - 32
+      - 64
+    k_values:
+      - 64
+      - 128
+      - 256
+      - 512
+
+# 输出配置
+output:
+  save_interval: 100
+  plot_format: "png"
+  plot_dpi: 300
+  log_level: "INFO"

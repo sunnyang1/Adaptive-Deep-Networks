@@ -1,0 +1,99 @@
+{
+  "project": "ADN-Performance-Optimizations",
+  "version": "1.0",
+  "complexity": "medium",
+  "completionDate": "2026-04-04",
+  "status": "COMPLETE",
+  "stories": [
+    {
+      "id": 1,
+      "title": "RaBitQ Cache Implementation",
+      "description": "Complete the RaBitQ KV cache decompression caching mechanism to avoid repeated decompression in RaBitQ + AttnRes combined mode",
+      "acceptanceCriteria": [
+        "`_get_cached_rabitq_kv` method fully implemented",
+        "Cache stores decompressed KV tensors",
+        "Cache invalidation works on input change",
+        "Performance improvement >= 2×"
+      ],
+      "results": {
+        "before": "17.278s",
+        "after": "1.649s",
+        "improvement": "10.5×"
+      },
+      "priority": "P0",
+      "estimatedMinutes": 30,
+      "actualMinutes": 30,
+      "filesToModify": [
+        "src/models/adaptive_transformer.py"
+      ],
+      "tests": [
+        "test_rabitq_cache_speedup - PASSED"
+      ],
+      "status": "completed",
+      "passes": true
+    },
+    {
+      "id": 2,
+      "title": "qTTT JIT Compilation",
+      "description": "Apply torch.jit.script or torch.compile to qTTT hot paths for 30%+ speedup",
+      "acceptanceCriteria": [
+        "`spherical_step` JIT version created",
+        "`compute_adaptation_loss` JIT version created",
+        "Performance improvement >= 30%",
+        "Backward compatibility maintained"
+      ],
+      "results": {
+        "before": "0.033ms",
+        "after": "0.021ms",
+        "improvement": "38.1%"
+      },
+      "priority": "P1",
+      "estimatedMinutes": 25,
+      "actualMinutes": 20,
+      "filesToModify": [
+        "src/qttt/polar_adaptation.py"
+      ],
+      "tests": [
+        "test_qttt_jit_speedup - PASSED"
+      ],
+      "status": "completed",
+      "passes": true
+    },
+    {
+      "id": 3,
+      "title": "Batch Processing Optimization",
+      "description": "Implement batch versions of qTTT and AttnRes for parallel processing",
+      "acceptanceCriteria": [
+        "`adapt_query_projection_batch` implemented",
+        "`block_attn_res_batch` implemented",
+        "Batch processing >= 40% faster than sequential",
+        "API backward compatible"
+      ],
+      "results": {
+        "before": "0.194s (sequential)",
+        "after": "0.087s (batch)",
+        "improvement": "54.9%",
+        "speedup": "2.22×"
+      },
+      "priority": "P1",
+      "estimatedMinutes": 35,
+      "actualMinutes": 35,
+      "filesToModify": [
+        "src/qttt/batch_adaptation.py",
+        "src/models/adaptive_transformer.py"
+      ],
+      "tests": [
+        "test_batch_speedup - PASSED",
+        "test_batch_qttt - PASSED (58.8% faster)"
+      ],
+      "status": "completed",
+      "passes": true
+    }
+  ],
+  "summary": {
+    "totalStories": 3,
+    "completedStories": 3,
+    "totalImprovement": "10.5× (RaBitQ) / 38% (JIT) / 122% (Batch)",
+    "allTestsPassed": true
+  }
+}

@@ -1,0 +1,60 @@
+# Paper Validation Targets
+# 
+# All target values from Adaptive Deep Networks paper tables
+
+# Table 1: Representation Burial (96-layer models)
+table1_representation_burial:
+  architectures:
+    prenorm:
+      attenuation: 13.5
+      effective_depth: 18
+    postnorm:
+      attenuation: 1.3
+      effective_depth: 72
+    deepnorm:
+      attenuation: 4.4
+      effective_depth: 45
+    attnres:
+      attenuation: 1.06
+      effective_depth: 91
+  tolerance: 0.15  # 15% tolerance
+
+# Table 2: Gradient Flow (8.7B models)
+table2_gradient_flow:
+  architectures:
+    prenorm:
+      cv: 0.84
+      early_late_ratio: 0.074
+    postnorm:
+      cv: 0.31
+      early_late_ratio: 0.74
+    deepnorm:
+      cv: 0.52
+      early_late_ratio: 0.23
+    attnres:
+      cv: 0.11
+      early_late_ratio: 0.94
+  tolerance: 0.15
+
+# Table 4: Needle-in-Haystack Accuracy
+table4_needle_haystack:
+  context_lengths:
+    4096: 98.5
+    32768: 91.3
+    65536: 85.5
+    131072: 78.2
+    262144: 68.2
+  average: 86.9
+  tolerance: 0.02  # 2% tolerance (stricter)
+  models:
+    - baseline
+    - ttt_linear
+    - attnres
+    - adb
+
+# RaBitQ Compression Claims
+rabitq:
+  compression_ratio: 5.0
+  kv_cache_reduction: 4.9
+  throughput_gain: 8.0
+  tolerance: 0.10  # 10% tolerance

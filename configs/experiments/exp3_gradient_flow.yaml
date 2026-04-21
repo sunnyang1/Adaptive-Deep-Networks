@@ -1,0 +1,41 @@
+# Experiment 3: Gradient Flow Analysis
+#
+# Measures gradient flow uniformity improvement with AttnRes
+
+name: "exp3_gradient_flow"
+category: "core"
+description: "Quantitative measurement of gradient flow uniformity across layers"
+
+model:
+  architectures:
+    - prenorm
+    - postnorm
+    - deepnorm
+    - attnres
+  num_layers: 32
+  d_model: 4096
+  num_heads: 32
+  vocab_size: 32000
+
+experiment:
+  num_steps: 1000
+  batch_size: 4
+  seq_len: 512
+  log_intervals: [10, 50, 100, 200, 500, 1000]
+  
+visualization:
+  colors:
+    prenorm: "#e74c3c"
+    postnorm: "#3498db"
+    deepnorm: "#2ecc71"
+    attnres: "#9b59b6"
+  dpi: 300
+
+output:
+  dir: "results/core/exp3_gradient_flow"
+  figures:
+    - cv_over_training
+    - gradient_heatmap
+    - early_late_ratio
+  report: "report.md"
+  results: "results.json"

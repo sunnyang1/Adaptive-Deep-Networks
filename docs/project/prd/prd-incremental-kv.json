@@ -1,0 +1,66 @@
+{
+  "projectInfo": {
+    "name": "incremental-kv-cache",
+    "description": "\u5b9e\u73b0\u589e\u91cf KV Cache \u65b0\u6a21\u578b\u7ed3\u6784\uff0cO(L) \u590d\u6742\u5ea6\u66ff\u4ee3 O(T\u00d7L)",
+    "branch": "feature/incremental-kv",
+    "complexity": "high"
+  },
+  "userStories": [
+    {
+      "id": "US1",
+      "title": "IncrementalState \u6570\u636e\u7ed3\u6784",
+      "description": "\u5b9a\u4e49\u7ed3\u6784\u5316\u7684\u72b6\u6001\u7ba1\u7406\u6570\u636e\u7ed3\u6784",
+      "acceptanceCriteria": [
+        "IncrementalState dataclass \u5b9a\u4e49",
+        "\u5305\u542b kv_caches, block_reps, partial_block",
+        "\u72b6\u6001\u9a8c\u8bc1\u65b9\u6cd5",
+        "\u5e8f\u5217\u5316\u652f\u6301"
+      ],
+      "priority": "high",
+      "estimatedMinutes": 10,
+      "passes": true
+    },
+    {
+      "id": "US2",
+      "title": "AdaptiveLayer \u5355 token \u652f\u6301",
+      "description": "\u8ba9\u6bcf\u5c42\u652f\u6301\u5355 token \u524d\u5411\u4f20\u64ad",
+      "acceptanceCriteria": [
+        "\u6dfb\u52a0 forward_single_token() \u65b9\u6cd5",
+        "\u6b63\u786e\u5904\u7406 KV cache \u8ffd\u52a0",
+        "\u6b63\u786e\u5904\u7406 block_representations",
+        "\u6570\u503c\u4e00\u81f4\u6027"
+      ],
+      "priority": "high",
+      "estimatedMinutes": 20,
+      "passes": true
+    },
+    {
+      "id": "US3",
+      "title": "IncrementalGenerator \u5b9e\u73b0",
+      "description": "\u5b9e\u73b0\u9ad8\u7ea7\u5305\u88c5\u5668\u7c7b",
+      "acceptanceCriteria": [
+        "prefill() \u65b9\u6cd5\u521d\u59cb\u5316",
+        "step() \u5355\u6b65\u751f\u6210",
+        "generate() \u5faa\u73af\u751f\u6210",
+        "\u6027\u80fd\u76d1\u63a7"
+      ],
+      "priority": "high",
+      "estimatedMinutes": 25,
+      "passes": true
+    },
+    {
+      "id": "US4",
+      "title": "\u96c6\u6210\u4e0e\u6d4b\u8bd5",
+      "description": "\u5b8c\u6574\u6d4b\u8bd5\u9a8c\u8bc1",
+      "acceptanceCriteria": [
+        "\u6570\u503c\u4e00\u81f4\u6027\u6d4b\u8bd5",
+        "\u6027\u80fd\u57fa\u51c6\u6d4b\u8bd5",
+        "\u957f\u5e8f\u5217\u6d4b\u8bd5",
+        "\u5185\u5b58\u4f7f\u7528\u6d4b\u8bd5"
+      ],
+      "priority": "high",
+      "estimatedMinutes": 20,
+      "passes": true
+    }
+  ]
+}

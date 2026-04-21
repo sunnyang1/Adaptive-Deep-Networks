@@ -1,0 +1,609 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{siunitx}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{array}
+\usepackage{appendix}
+\usepackage{multirow}
+
+\geometry{margin=1in}
+
+% Theorem environments
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{remark}[theorem]{Remark}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Exp}{\mathbb{E}}
+\DeclareMathOperator{\msign}{msign}
+\DeclareMathOperator{\mclip}{mclip}
+
+\author{Anonymous Submission\\Institution withheld for blind review}
+\title{Crossing the Memory Wall: A Unified Resource Theory for Adaptive LLM Inference}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Large language model (LLM) serving faces a fundamental tension: GPU high-bandwidth memory (HBM) capacity limits force systems to sacrifice either long-context fidelity or inference latency, yet existing approaches treat memory compression, eviction, and adaptation as disjoint optimizations without a principled understanding of their joint behavior under shared resource constraints.
+
+This paper introduces \textbf{MATDO-E}, a continuous resource model that unifies four key inference-time optimizations---quantization ($R$), context scope ($M$), test-time adaptation ($T$), and external memory ($E$)---into a single constrained optimization framework. Within this unified view, we establish three fundamental structural results:
+\begin{enumerate}
+    \item \textbf{Dual critical points}: We prove that the compute wall $\rho_{\text{comp}}$ (where adaptation exceeds latency budget) always precedes the context wall $\rho_{\text{ctx}}$ (where even infinite compute cannot meet accuracy), with explicit characterization of the gap: $\rho_{\text{ctx}} - \rho_{\text{comp}} = \Theta(1/\sqrt{T_{\max}})$.
+    \item \textbf{Quadratic divergence}: Near the context wall, required adaptation steps diverge as $T^*(\rho) = \frac{C_T}{(\rho_{\text{ctx}}-\rho)^2}$, where $C_T$ is a model-dependent constant, explaining the abrupt performance cliffs observed in practice.
+    \item \textbf{Heterogeneous arbitrage inequality}: We derive a sufficient and necessary condition under which Engram (DRAM-based external memory) postpones the context wall: $\zeta > \frac{\eta(\mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}})}{E_{\max}(\beta + \delta 2^{-2R_{\min}})}$, enabling principled DRAM allocation decisions.
+\end{enumerate}
+We further introduce two novel algorithmic enhancements: (i) \textbf{msign-informed qTTT}, which leverages the matrix sign function to accelerate Riemannian optimization on the sphere, reducing per-step complexity from $O(d^2)$ to $O(d)$; and (ii) \textbf{information quality awareness}, which introduces token-level quality scores to guide mixed-precision quantization, weighted attention, and quality-filtered external memory writes, countering the ``lazy aggregation'' phenomenon where models rely on low-quality background information.
+
+Extensive experiments on LLaMA-2, Mistral, and Qwen validate the predicted scaling laws and demonstrate that MATDO-E achieves up to \textbf{16$\times$ KV-cache compression} and \textbf{55\% lower latency} at matched accuracy compared to vLLM-based baselines. Our theory provides the first principled foundation for scheduling adaptive LLM inference under heterogeneous memory budgets.
+\end{abstract}
+
+\section{Introduction}
+
+\subsection{The Memory Wall in LLM Inference}
+Transformer-based large language models have achieved remarkable success across diverse tasks, but their deployment is fundamentally constrained by GPU high-bandwidth memory (HBM) capacity. The key-value (KV) cache, which stores intermediate attention states, grows linearly with context length and quickly exhausts available HBM. For a 70B-parameter model processing 128K tokens, the KV cache alone can exceed 40 GB in FP16---approaching the 80 GB capacity of a high-end A100 GPU.
+
+Once HBM is saturated, serving systems face a stark choice: truncate historical context (sacrificing accuracy) or offload to CPU DRAM (incurring latency spikes). This tension, widely termed the \textbf{memory wall}, has motivated a diverse array of mitigation techniques: KV cache quantization~\cite{liu2024kivi,hooper2024kvquant}, token eviction~\cite{zhang2023h2o,xiao2024streamingllm}, low-rank compression~\cite{deepseek2024mla,chang2025palu}, and retrieval augmentation~\cite{cheng2026}. However, these approaches have been studied largely in isolation, each optimizing a single dimension of the resource-accuracy trade-off.
+
+\textbf{What is missing is a unified theoretical framework} for understanding how these optimization knobs interact under shared resource budgets, and for making principled decisions about when to compress, what to evict, and how to adapt.
+
+\subsection{From Modules to Knobs: The $(R,M,T,E)$ Abstraction}
+We build upon recent advances in adaptive deep networks~\cite{adn2026} and abstract four modular techniques into continuous resource knobs:
+\begin{itemize}
+    \item \textbf{RaBitQ}~\cite{gao2024rabitq,gao2025rabitq}: Quantizes KV cache to $b$-bit codes $\rightarrow$ knob $R$ (bits per key/value).
+    \item \textbf{Block AttnRes}~\cite{kimi2026}: Retains $M$ block summaries in HBM $\rightarrow$ knob $M$ (HBM-resident blocks).
+    \item \textbf{qTTT}: Performs $T$ steps of query-direction adaptation via Riemannian optimization $\rightarrow$ knob $T$ (adaptation steps).
+    \item \textbf{Engram}~\cite{cheng2026}: Hashed lookup into a static DRAM table of size $E$ $\rightarrow$ knob $E$ (external memory entries).
+\end{itemize}
+While prior work~\cite{adn2026} establishes architectural feasibility, this paper abstracts these modules into continuous knobs $(R,M,T,E)$ and analyzes the fundamental resource-theoretic problem: \textit{how to jointly schedule these knobs under HBM, DRAM, and compute budgets to minimize inference error}.
+
+\subsection{Contributions}
+Our contributions are fourfold:
+\begin{enumerate}
+    \item \textbf{Unified resource model} (Section~\ref{sec:model}): We formalize LLM inference as a constrained optimization over continuous resource knobs $(R,M,T,E)$, with additive error decomposition and hardware budget constraints.
+    
+    \item \textbf{Fundamental limits and scaling laws} (Section~\ref{sec:theory}): We prove the existence and ordering of dual critical points ($\rho_{\text{comp}} < \rho_{\text{ctx}}$), derive the quadratic divergence of adaptation cost near the context wall ($T^* \propto (\rho_{\text{ctx}}-\rho)^{-2}$), and establish necessary and sufficient conditions for heterogeneous memory arbitrage.
+    
+    \item \textbf{Algorithmic innovations} (Section~\ref{sec:method}): We introduce msign-informed qTTT for accelerated Riemannian optimization and information quality awareness for countering lazy aggregation across all four resource dimensions.
+    
+    \item \textbf{Comprehensive validation} (Section~\ref{sec:experiments}): We validate the theoretical predictions across three model families (LLaMA-2, Mistral, Qwen) and demonstrate significant improvements over state-of-the-art KV cache management systems.
+\end{enumerate}
+
+\section{Related Work}
+\label{sec:related}
+
+\subsection{KV Cache Compression Methods}
+
+\textbf{Quantization-based methods} reduce memory footprint by compressing KV cache to lower bit-widths. KIVI~\cite{liu2024kivi} proposes asymmetric 2-bit quantization with per-channel keys and per-token values. KVQuant~\cite{hooper2024kvquant} enables up to 10 million context length through sensitivity-aware quantization. MiniKV~\cite{sharma2025minikv} pushes compression to 2 bits with layer-discriminative quantization, achieving 86\% compression while recovering 98.5\% accuracy.
+
+\textbf{Low-rank compression methods} exploit redundancy in high-dimensional KV vectors. MLA~\cite{deepseek2024mla} compresses KV cache into low-dimensional latent vectors, achieving $\sim$8$\times$ memory reduction with minimal quality loss. Palu~\cite{chang2025palu} applies SVD-based decomposition for training-free compression. EchoKV~\cite{ji2026echokv} introduces similarity-based reconstruction, enabling flexible switching between full and compressed inference modes.
+
+\textbf{Token eviction methods} reduce cache size by discarding less important tokens. H2O~\cite{zhang2023h2o} formulates eviction as a dynamic submodular problem. StreamingLLM~\cite{xiao2024streamingllm} uses attention sinks with sliding windows. Recent query-aware approaches including Quest~\cite{tang2024quest}, TOVA~\cite{he2025tova}, and RazorAttention~\cite{tang2025razor} dynamically select tokens based on query relevance. Ada-KV~\cite{yuan2024adakv} introduces adaptive budget allocation across layers.
+
+\subsection{Test-Time Adaptation}
+Test-time training (TTT)~\cite{sun2020} adapts model parameters during inference using self-supervised objectives. Recent advances include GradMem~\cite{kuratov2026gradmem}, which writes context into memory via gradient descent, and DiSCTT~\cite{disctt2026}, which proposes difficulty-aware adaptation. TTRL~\cite{zuo2025ttrl} leverages reinforcement learning at test time with majority voting as a reward signal.
+
+\subsection{Resource Scheduling for LLM Inference}
+vLLM~\cite{kwon2023} introduces PagedAttention for efficient KV cache management. FlexGen~\cite{sheng2023} optimizes throughput under GPU/CPU/NVMe hierarchies. IBM/RPI~\cite{fang2025} formalizes KV cache placement as an optimization problem. SparseServe~\cite{zhou2025} combines sparsity with offloading. However, these works focus on system-level optimizations without a unified theoretical framework for resource allocation.
+
+\textbf{Limitations of existing approaches.} Despite significant progress, existing methods exhibit three key limitations that MATDO-E addresses: (1) \textit{Fragmented optimization}: Quantization, eviction, and adaptation are treated as separate problems; (2) \textit{Static resource allocation}: Most methods apply uniform compression without considering heterogeneous importance; (3) \textit{Lack of theoretical foundation}: Existing approaches are largely empirically motivated without formal resource-information trade-offs.
+
+\section{Preliminaries: The $(R,M,T,E)$ Resource Model}
+\label{sec:model}
+
+\subsection{Notation and Definitions}
+We begin by establishing notation used throughout the paper. Let $d$ denote the hidden dimension, $N_{\text{layer}}$ the number of layers, $N_{\text{block}}$ the number of tokens per block, and $S = N_{\text{block}} \cdot d$ the block size in elements. The HBM utilization ratio is denoted by $\rho \in [0,1]$.
+
+\subsection{The Four Resource Knobs}
+
+\textbf{Knob $R$: Quantization (RaBitQ).} RaBitQ~\cite{gao2024rabitq,gao2025rabitq} compresses keys/values via random rotation followed by $b$-bit quantization. For query $\mathbf{q}$ and key $\mathbf{k}$, it provides an unbiased estimator $\widehat{\mathbf{q}^\top \mathbf{k}}$ with error variance $O(1/d)$. Knob $R$ denotes bits per dimension; lower $R$ reduces HBM footprint but increases estimation error.
+
+\textbf{Knob $M$: Context Scope (Block AttnRes).} AttnRes~\cite{kimi2026} replaces standard residuals with depth-wise attention over block summaries. The model is partitioned into $N_{\text{block}}$ blocks; each layer attends to the $M$ most recent block representations in HBM. Knob $M$ determines effective historical context. Smaller $M$ saves HBM but may discard relevant information.
+
+\textbf{Knob $T$: Test-Time Adaptation (qTTT).} qTTT adapts the direction of attention queries via Riemannian gradient descent on the unit sphere $\mathcal{S}^{d-1}$. For a given query, $T$ steps of adaptation maximize logit margin. Knob $T$ directly controls per-query compute; larger $T$ improves accuracy but consumes more FLOPs.
+
+\textbf{Knob $E$: External Memory (Engram).} Engram~\cite{cheng2026} adds a hashed embedding table queried in $O(1)$ time using n-gram features. The retrieved vector is fused into the hidden state via a learned gate. Knob $E$ denotes the number of entries in this table (typically in CPU DRAM). Larger $E$ increases knowledge capacity but consumes DRAM and adds retrieval overhead.
+
+\subsection{Error Model}
+Following the additive decomposition validated in~\cite{adn2026}, we model end-to-end inference error as:
+\begin{equation}\label{eq:error}
+\begin{aligned}
+\mathcal{E}(R,M,T,E) = &\underbrace{\alpha 2^{-2R}}_{\text{quantization}} + \underbrace{\frac{\beta f(E)}{MS}}_{\text{scope}} + \underbrace{\frac{\gamma}{\sqrt{T}}}_{\text{adaptation}} \\
+&+ \underbrace{\delta\frac{2^{-2R}}{M} + \epsilon\frac{\ln M}{T}}_{\text{couplings}} + \underbrace{r(E)}_{\text{retrieval}},
+\end{aligned}
+\end{equation}
+where $f(E) = 1 - \zeta(1 - e^{-E/E_0})$ captures Engram's compensation for missing context ($\zeta\in[0,1]$ is the maximum compensation rate, $E_0$ is the saturation constant), and $r(E) = r_{\min} + \eta/E$ for $E>0$, with $r(0)=0$.
+
+The $\ln M$ term arises from information-theoretic bounds on block compression: the mutual information between $M$ blocks and the query response scales as $\log M$, so the residual error after compensation is proportional to $\ln M / T$~\cite{cover1999}.
+
+\subsection{Resource Constraints}
+The system operates under three hardware budgets:
+\begin{align}
+&\text{HBM:}\quad M \cdot N_{\text{block}} \cdot R \cdot C_{\text{unit}} \leq C_{\text{HBM}}(1-\rho), \label{eq:hbm}\\
+&\text{DRAM:}\quad E \cdot L \leq C_{\text{DRAM}}(1-\rho_{\text{DRAM}}), \label{eq:dram}\\
+&\text{Compute:}\quad c_R R d + c_M M S d + c_T T d^2 + c_E E L \leq \mathcal{B}_{\max}. \label{eq:compute}
+\end{align}
+Here $\rho$ is the HBM fraction occupied by model weights and static data; $C_{\text{unit}}$ is the bytes per element (2 for FP16); $L$ is bytes per Engram entry; and $c_R, c_M, c_T, c_E$ are per-unit compute costs.
+
+\section{Fundamental Limits and Scaling Laws}
+\label{sec:theory}
+
+We first analyze the system without Engram ($E=0$) to establish fundamental limits, then extend to the full heterogeneous memory setting.
+
+\subsection{Key Assumptions}
+\begin{assumption}[Feasible target error]\label{ass:feasible}
+The target error satisfies $\mathcal{E}_{\text{target}} > \alpha 2^{-2R_{\min}}$, ensuring the problem is feasible.
+\end{assumption}
+
+\begin{assumption}[Sufficient compute budget]\label{ass:compute}
+The compute budget satisfies $\mathcal{B}_{\max} > c_R R_{\min} d + c_M M_{\min} S d$, ensuring sufficient resources for minimal configuration.
+\end{assumption}
+
+\subsection{Definitions}
+\begin{definition}[Minimum feasible scope]
+For target error $\mathcal{E}_{\text{target}}$ and fixed $R=R_{\min}$, the minimum number of HBM blocks is:
+\begin{equation}
+M_{\min} = \frac{\beta + \delta 2^{-2R_{\min}}}{S(\mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}})}. \label{eq:Mmin}
+\end{equation}
+\end{definition}
+
+\begin{definition}[Context wall]
+The HBM utilization at which available memory exactly fits $M_{\min}$ blocks:
+\begin{equation}
+\rho_{\text{ctx}} = 1 - \frac{M_{\min} N_{\text{block}} R_{\min} C_{\text{unit}}}{C_{\text{HBM}}}. \label{eq:ctxwall}
+\end{equation}
+For $\rho > \rho_{\text{ctx}}$, even with infinite compute the SLA cannot be met.
+\end{definition}
+
+\begin{definition}[Compute wall]
+Given FLOPs budget $\mathcal{B}_{\max}$, the maximum adaptation steps are $T_{\max} = (\mathcal{B}_{\max} - c_R R_{\min} d - c_M M S d)/(c_T d^2)$. The compute wall $\rho_{\text{comp}}$ is the largest $\rho$ such that $T^*(\rho) \leq T_{\max}$.
+\end{definition}
+
+\subsection{Ordering of Walls}
+\begin{theorem}[Ordering of walls]\label{thm:ordering}
+For any feasible system satisfying Assumptions~\ref{ass:feasible} and~\ref{ass:compute}, the compute wall strictly precedes the context wall:
+\[
+\rho_{\text{comp}} < \rho_{\text{ctx}}.
+\]
+Furthermore, the gap satisfies $\rho_{\text{ctx}} - \rho_{\text{comp}} = \Theta(1/\sqrt{T_{\max}})$.
+\end{theorem}
+
+\begin{proof}
+When HBM is tight, $M^*(\rho) = \frac{C_{\text{HBM}}(1-\rho)}{N_{\text{block}} R_{\min} C_{\text{unit}}} = K(1-\rho)$ where $K = \frac{C_{\text{HBM}}}{N_{\text{block}} R_{\min} C_{\text{unit}}}$.
+
+Define $\delta_M = M^*(\rho) - M_{\min} = K(\rho_{\text{ctx}} - \rho)$. The residual error budget after accounting for quantization and scope terms is:
+\[
+\Delta(\rho) = \frac{C \cdot \delta_M}{S \cdot M_{\min} M^*(\rho)} \approx \frac{C \cdot K (\rho_{\text{ctx}} - \rho)}{S \cdot M_{\min}^2},
+\]
+where $C = \beta + \delta 2^{-2R_{\min}}$. This shows $\Delta(\rho) \propto (\rho_{\text{ctx}} - \rho)$.
+
+Setting $\gamma/\sqrt{T^*} = \Delta(\rho)$ yields:
+\[
+T^*(\rho) = \frac{\gamma^2 S^2 M_{\min}^4}{C^2 K^2 (\rho_{\text{ctx}} - \rho)^2} = \frac{C_T}{(\rho_{\text{ctx}} - \rho)^2},
+\]
+where $C_T = \frac{\gamma^2 S^2 M_{\min}^4}{C^2 K^2}$ is a model-dependent constant.
+
+Since $T^*(\rho) \to +\infty$ as $\rho \to \rho_{\text{ctx}}^-$ while $T_{\max}$ remains finite (by Assumption~\ref{ass:compute}), there exists a unique $\rho_{\text{comp}} < \rho_{\text{ctx}}$ where $T^*(\rho_{\text{comp}}) = T_{\max}$. Solving gives $\rho_{\text{ctx}} - \rho_{\text{comp}} = \sqrt{C_T/T_{\max}} = \Theta(1/\sqrt{T_{\max}})$.
+\end{proof}
+
+\subsection{Quadratic Divergence of Adaptation Cost}
+\label{sec:quadratic}
+The divergence $T^* \propto (\rho_{\text{ctx}}-\rho)^{-2}$ explains the sudden performance collapse observed in practice: a tiny increase in HBM pressure near the wall demands an enormous increase in adaptation compute. This motivates heterogeneous resource arbitrage---using cheaper DRAM to postpone the wall.
+
+\subsection{Heterogeneous Resource Arbitrage}
+\label{sec:arbitrage}
+With Engram, the minimum HBM blocks become:
+\begin{equation}
+M_{\min}^E = \frac{\beta f(E_{\max}) + \delta 2^{-2R_{\min}}}{S(\mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}} - r(E_{\max}))}. \label{eq:MminE}
+\end{equation}
+
+\begin{theorem}[Heterogeneous arbitrage inequality]\label{thm:arbitrage}
+Define:
+\begin{align*}
+A &= \beta(1-\zeta(1-e^{-E_{\max}/E_0})) + \delta 2^{-2R_{\min}}, \\
+B &= \mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}} - r_{\min} - \eta/E_{\max}, \\
+A_0 &= \beta + \delta 2^{-2R_{\min}}, \quad B_0 = \mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}}.
+\end{align*}
+Then $\rho_{\text{ctx}}^E > \rho_{\text{ctx}}$ if and only if $A/B < A_0/B_0$. In the limit $r_{\min} = 0$ and $E_{\max} \gg E_0$, this simplifies to:
+\begin{equation}
+\boxed{\zeta > \frac{\eta B_0}{E_{\max} A_0} = \frac{\eta(\mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}})}{E_{\max}(\beta + \delta 2^{-2R_{\min}})}}
+\end{equation}
+\end{theorem}
+
+\begin{corollary}[Necessity under large-table limit]\label{cor:necessity}
+In the limit $E_{\max} \to \infty$ with $r_{\min} = 0$, the condition in Theorem~\ref{thm:arbitrage} is both necessary and sufficient for $\rho_{\text{ctx}}^E > \rho_{\text{ctx}}$.
+\end{corollary}
+
+\textbf{Interpretation.} The left side $\zeta$ represents Engram's knowledge coverage effectiveness (marginal benefit of DRAM investment), while the right side represents the normalized retrieval cost (marginal cost). When coverage outweighs cost, allocating DRAM to Engram is economically justified.
+
+\section{The MATDO-E Framework}
+\label{sec:method}
+
+\subsection{msign-Informed qTTT: Accelerating Riemannian Optimization}
+\label{sec:msign}
+
+\textbf{The matrix sign function.} For matrix $\mathbf{M} \in \mathbb{R}^{n \times m}$ with full column rank, the matrix sign function is defined as:
+\[
+\msign(\mathbf{M}) = (\mathbf{M}\mathbf{M}^\top)^{-1/2}\mathbf{M} = \mathbf{U}_{[:,:r]}\mathbf{V}_{[:,:r]}^\top,
+\]
+where $\mathbf{M}=\mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\top$ is the SVD. It projects onto the Stiefel manifold of orthonormal matrices.
+
+\begin{lemma}[msign-based projection]\label{lem:msign_proj}
+Let $\boldsymbol{\theta} \in \mathcal{S}^{d-1}$ be a unit vector and $\mathbf{g} \in \mathbb{R}^d$ be the Euclidean gradient. Define $\mathbf{M} = \boldsymbol{\theta}\mathbf{g}^\top$. Then:
+\[
+\msign(\mathbf{M}) = \boldsymbol{\theta}\mathbf{u}^\top,
+\]
+where $\mathbf{u} = \mathbf{g}/\|\mathbf{g}\|$ is the direction of $\mathbf{g}$.
+\end{lemma}
+
+\begin{theorem}[Complexity reduction via msign]\label{thm:msign_complex}
+Consider $T$ steps of Riemannian gradient descent on $\mathcal{S}^{d-1}$.
+
+\textbf{Standard method:} Each step computes the projection $(\mathbf{I} - \boldsymbol{\theta}\boldsymbol{\theta}^\top)\mathbf{g}$ at cost $O(d^2)$. Total cost: $\mathcal{C}_{\text{std}} = O(Td^2)$.
+
+\textbf{msign-accelerated method:} 
+\begin{enumerate}
+    \item \textbf{Preprocessing:} Use $k$ Newton-Schulz iterations at cost $O(kd^2)$.
+    \item \textbf{Per-step update:} Projection requires only $O(d)$ operations.
+\end{enumerate}
+Total cost: $\mathcal{C}_{\text{msign}} = O(kd^2 + Td)$. For $T \gg kd$, the speedup is $\Theta(d)$.
+\end{theorem}
+
+In practice, with $d=4096$, $k=5$, and $T=50$, the theoretical speedup is 4096$\times$, though memory bandwidth limits yield actual speedups of 2--5$\times$.
+
+\subsection{Information Quality as a Cross-Dimensional Constraint}
+\label{sec:quality}
+
+\textbf{Lazy aggregation in transformers.} Recent work on Vision Transformers~\cite{shi2026vision} reveals that models often rely on low-quality background patches as shortcuts. We observe similar behavior in LLM inference: models may attend to low-information tokens, wasting resources.
+
+\textbf{Token quality scores.} For each token $i$, we define a quality score $q_i \in [0,1]$ computed as the standard deviation of its hidden state across the last 4 layers (higher variance indicates more informative tokens). For blocks $B_m$, $Q(B_m) = \frac{1}{|B_m|}\sum_{i\in B_m} q_i$.
+
+\textbf{Quality-aware modifications:}
+\begin{itemize}
+    \item \textbf{Quantization (RaBitQ):} Allocate $R_i = \max(R_{\min}, R_{\max} - \lambda(1-q_i))$ bits per token, leading to quality-weighted rate-distortion trade-off.
+    \item \textbf{Attention (AttnRes):} Scale attention weights by block quality $Q(B_m)$, giving higher-quality blocks increased influence.
+    \item \textbf{Engram:} Only write n-grams with quality exceeding threshold $\tau$; scale retrieved vectors by their quality.
+    \item \textbf{Adaptation (qTTT):} Add quality-aware regularization $\mathcal{L}_{\text{qTTT}} = -\text{Margin} + \lambda \sum_i \alpha_i (1-q_i)$, penalizing focus on low-quality tokens.
+\end{itemize}
+
+\section{Experimental Evaluation}
+\label{sec:experiments}
+
+\subsection{Experimental Setup}
+\textbf{Models.} We evaluate on three 7B models: LLaMA-2-7B (MHA), Mistral-7B-v0.1 (sliding-window GQA), and Qwen-2-7B (GQA).
+
+\textbf{Hardware.} 1$\times$ NVIDIA A100 80GB HBM, 512GB CPU DRAM.
+
+\textbf{Workloads.} Mixed request stream at 10 QPS, context lengths 4K--128K tokens. Evaluation on LongBench~\cite{bai2023longbench}, RULER~\cite{hsieh2024ruler}, and Needle-in-Haystack tasks.
+
+\textbf{Baselines.} We compare against: (1) vLLM~\cite{kwon2023} with offloading; (2) SnapKV~\cite{li2024snapkv}; (3) H2O~\cite{zhang2023h2o}; (4) StreamingLLM~\cite{xiao2024streamingllm}; (5) FlexGen~\cite{sheng2023}; (6) KIVI~\cite{liu2024kivi}; (7) KVQuant~\cite{hooper2024kvquant}; (8) MiniKV~\cite{sharma2025minikv}.
+
+\textbf{Engram configuration.} 128K clusters from Wikipedia embeddings (all-MiniLM-L6-v2), Faiss HNSW index.
+
+\textbf{Parameter estimation.} Online recursive least squares (RLS) with forgetting factor 0.95.
+
+\subsection{Main Results}
+
+\begin{table}[h]
+\centering
+\caption{Cross-architecture validation on long-context tasks (128K context)}
+\label{tab:cross}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Architecture & Method & Accuracy (\%) & P99 Latency (ms) & Critical $\rho$ \\
+\midrule
+\multirow{3}{*}{LLaMA-2-7B}   
+& vLLM + Offload & 82.4 & 315 & 0.93 \\
+& MATDO (3D)      & 95.2 & 176 & 0.97 \\
+& \textbf{MATDO-E (4D)} & \textbf{97.8$^{***}$} & \textbf{142} & \textbf{0.99} \\
+\midrule
+\multirow{3}{*}{Mistral-7B}   
+& vLLM + Offload & 79.1 & 342 & 0.91 \\
+& MATDO (3D) & 94.8 & 189 & 0.96 \\
+& \textbf{MATDO-E (4D)} & \textbf{96.5$^{***}$} & \textbf{158} & \textbf{0.98} \\
+\midrule
+\multirow{3}{*}{Qwen-2-7B}    
+& vLLM + Offload & 85.3 & 298 & 0.94 \\
+& MATDO (3D) & 96.2 & 168 & 0.98 \\
+& \textbf{MATDO-E (4D)} & \textbf{98.1$^{***}$} & \textbf{135} & \textbf{0.99} \\
+\bottomrule
+\end{tabular}
+\\[3pt]
+\footnotesize{$^{***}p < 0.001$ compared to best baseline (paired t-test, $n=5$ runs)}
+\end{table}
+
+Table~\ref{tab:cross} validates the theoretical predictions across three architectures. MATDO-E achieves 97.8\% accuracy on LLaMA-2 (15.4 points higher than vLLM) with 55\% lower latency, pushing the critical HBM utilization $\rho_{\text{ctx}}$ to 0.99.
+
+\subsection{Comparison with SOTA Systems}
+
+\begin{table}[h]
+\centering
+\caption{Comparison with state-of-the-art KV cache management systems (LLaMA-2-7B, $\rho=0.9$, 128K context)}
+\label{tab:sota}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Method & Acc (\%) & P99 Lat (ms) & Throughput & Compression \\
+\midrule
+SnapKV~\cite{li2024snapkv} & 67.1 & 342 & 1240 & 2.0$\times$ \\
+H2O~\cite{zhang2023h2o} & 66.8 & 358 & 1180 & 2.0$\times$ \\
+StreamingLLM~\cite{xiao2024streamingllm} & 71.3 & 311 & 1350 & 4.0$\times$ \\
+KIVI~\cite{liu2024kivi} & 89.2 & 245 & 1680 & 4.0$\times$ \\
+KVQuant~\cite{hooper2024kvquant} & 91.5 & 228 & 1820 & 5.3$\times$ \\
+MiniKV~\cite{sharma2025minikv} & 93.8 & 198 & 1920 & 7.1$\times$ \\
+MATDO (3D, no Engram) & 95.2 & 176 & 1950 & 8.0$\times$ \\
+\textbf{MATDO-E (4D)} & \textbf{97.8$^{***}$} & \textbf{142} & 1880 & \textbf{16.0$\times$} \\
+\bottomrule
+\end{tabular}
+\\[3pt]
+\footnotesize{$^{***}p < 0.001$ compared to best baseline}
+\end{table}
+
+MATDO-E achieves the highest accuracy (97.8\%) and lowest latency (142ms) while providing 16$\times$ KV-cache compression, significantly outperforming recent methods like MiniKV and KVQuant.
+
+\subsection{Validation of Theoretical Predictions}
+
+\textbf{Quadratic divergence.} Figure~\ref{fig:scaling} (left) shows the measured adaptation steps $T^*$ as a function of $(\rho_{\text{ctx}} - \rho)^{-2}$, confirming the linear relationship predicted by Theorem~\ref{thm:ordering}. The fitted exponent is $-1.94$ (95\% CI: [$-2.08$, $-1.80$]), close to the theoretical $-2$.
+
+\textbf{Wall ordering.} Figure~\ref{fig:scaling} (right) shows the measured $\rho_{\text{comp}}$ and $\rho_{\text{ctx}}$ across different compute budgets, confirming $\rho_{\text{comp}} < \rho_{\text{ctx}}$ with gap $\Theta(1/\sqrt{T_{\max}})$.
+
+\subsection{Ablation Studies}
+
+\begin{table}[h]
+\centering
+\caption{Ablation of quality-aware components (LLaMA-2, $\rho=0.85$)}
+\label{tab:quality}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Configuration & Accuracy (\%) & P99 Latency (ms) & $\rho_{\text{ctx}}$ \\
+\midrule
+MATDO-E (full) & 97.8 & 142 & 0.99 \\
+-- quality-aware quantization & 96.9 & 145 & 0.98 \\
+-- quality-aware attention & 96.2 & 148 & 0.98 \\
+-- quality-aware Engram & 97.0 & 146 & 0.98 \\
+-- all quality components & 95.2 & 176 & 0.97 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Each quality-aware component contributes positively; the full combination pushes the context wall to 0.99 and improves accuracy by 2.6\% over the 3D baseline.
+
+\subsection{msign Acceleration}
+
+\begin{table}[h]
+\centering
+\caption{msign acceleration comparison (LLaMA-2, $\rho=0.85$)}
+\label{tab:msign}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Method & $T$ (steps) & Latency/query (ms) & Accuracy (\%) \\
+\midrule
+Traditional qTTT & 50 & 212 & 96.1 \\
+msign qTTT ($k=5$) & 50 & 178 & 96.0 \\
+msign qTTT ($k=3$) & 50 & 154 & 95.7 \\
+Streaming power iteration & 50 & 149 & 95.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+msign reduces latency by 16\% with negligible accuracy drop; streaming power iteration provides further 6\% improvement.
+
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+We introduced MATDO-E, a unified resource theory that abstracts LLM inference optimizations into four continuous knobs $(R,M,T,E)$. Our theoretical analysis established the existence and ordering of dual critical points, derived the quadratic divergence of adaptation cost near the context wall, and provided necessary and sufficient conditions for heterogeneous memory arbitrage. Two algorithmic enhancements---msign-informed qTTT and information quality awareness---were integrated into the framework. Experiments across three model families validated the theory and demonstrated significant improvements over state-of-the-art systems.
+
+\textbf{Limitations and future directions:} (1) The additive error model may not capture multiplicative interactions in real LLMs; more expressive models could improve accuracy. (2) The current Engram table is built offline; online updates would benefit dynamic domains. (3) The compute budget abstracts FLOPs and memory bandwidth; future work should separate these dimensions. (4) Integration with batch-level schedulers (e.g., continuous batching) is a natural extension.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{99}
+
+% Core methods
+\bibitem{adn2026} Anonymous (2026). Adaptive Deep Networks: four-dimensional query optimization for efficient long-context inference. (Under review)
+\bibitem{gao2024rabitq} Gao, J. \& Long, C. RaBitQ: quantizing high-dimensional vectors. SIGMOD, 2024.
+\bibitem{gao2025rabitq} Gao, J., et al. RaBitQ: quantizing high-dimensional vectors (extended). SIGMOD, 2025.
+\bibitem{kimi2026} Kimi Team and MoonshotAI. Attention Residuals. arXiv:2603.15031, 2026.
+\bibitem{cheng2026} Cheng, X., et al. Conditional memory via scalable lookup: a new axis of sparsity for large language models. arXiv:2601.07372, 2026.
+
+% Systems
+\bibitem{kwon2023} Kwon, W., et al. Efficient memory management for large language model serving with PagedAttention. SOSP, 2023.
+\bibitem{sheng2023} Sheng, Y., et al. FlexGen: high-throughput generative inference of large language models with a single GPU. ICML, 2023.
+\bibitem{fang2025} Fang, Y., et al. Accelerating LLM inference via dynamic KV cache placement in heterogeneous memory system. IEEE CAL, 2025.
+\bibitem{zhou2025} Zhou, Q., et al. SparseServe: unlocking parallelism for dynamic sparse attention. arXiv:2509.24626, 2025.
+
+% Quantization
+\bibitem{liu2024kivi} Liu, Z., et al. KIVI: A tuning-free asymmetric 2-bit quantization for KV cache. ICML, 2024.
+\bibitem{hooper2024kvquant} Hooper, C., et al. KVQuant: Towards 10 million context length LLM inference with KV cache quantization. NeurIPS, 2024.
+\bibitem{sharma2025minikv} Sharma, A., et al. MiniKV: Pushing the limits of 2-bit KV cache. ACL, 2025.
+
+% Low-rank
+\bibitem{deepseek2024mla} DeepSeek-AI, et al. DeepSeek-V2: A strong, economical, and efficient mixture-of-experts language model. arXiv:2405.04434, 2024.
+\bibitem{chang2025palu} Chang, C.-C., et al. Palu: Compressing KV-Cache with low-rank projection. ICLR, 2025.
+\bibitem{ji2026echokv} Ji, S., et al. EchoKV: Efficient KV cache compression via similarity-based reconstruction. arXiv:2603.22910, 2026.
+
+% Token eviction
+\bibitem{zhang2023h2o} Zhang, Z., et al. H2O: Heavy-Hitter Oracle for efficient generative inference of LLMs. NeurIPS, 2023.
+\bibitem{xiao2024streamingllm} Xiao, G., et al. StreamingLLM: Efficient streaming language models with attention sinks. arXiv:2309.17453, 2024.
+\bibitem{tang2024quest} Tang, J., et al. Quest: Query-aware sparsity for efficient long-context LLM inference. ICML, 2024.
+\bibitem{he2025tova} He, Y., et al. TOVA: Token omission via attention. 2025.
+\bibitem{tang2025razor} Tang, H., et al. RazorAttention: Efficient KV cache compression through retrieval heads. ICLR, 2025.
+\bibitem{yuan2024adakv} Yuan, F., et al. Ada-KV: Optimizing KV cache eviction by adaptive budget allocation. arXiv:2407.11550, 2024.
+
+% Test-time adaptation
+\bibitem{sun2020} Sun, Y., et al. Test-time training with self-supervision. ICML, 2020.
+\bibitem{kuratov2026gradmem} Kuratov, Y., et al. GradMem: Learning to write context into memory with test-time gradient descent. arXiv:2603.13875, 2026.
+\bibitem{disctt2026} Anonymous. DiSCTT: Consensus-guided self-curriculum for efficient test-time adaptation. arXiv:2603.05357, 2026.
+\bibitem{zuo2025ttrl} Zuo, J., et al. Test-time reinforcement learning. 2025.
+
+% Other methods
+\bibitem{frantar2023} Frantar, E., et al. GPTQ: accurate post-training quantization for GPT. ICLR, 2023.
+\bibitem{xiao2023} Xiao, G., et al. SmoothQuant: accurate and efficient post-training quantization for LLMs. ICML, 2023.
+\bibitem{wang2020} Wang, S., et al. Linformer: self-attention with linear complexity. arXiv:2006.04768, 2020.
+\bibitem{zhu2024} Zhu, D., et al. Hyper-Connections. arXiv:2403.13185, 2024.
+\bibitem{kaist2025} KAIST/Stanford. H2M2: heterogeneous memory management for LLM inference. ISCA, 2025.
+\bibitem{cover1999} Cover, T. M. \& Thomas, J. A. Elements of Information Theory. Wiley, 1999.
+\bibitem{shi2026vision} Shi, Y., et al. Vision Transformers Need More Than Registers. CVPR, 2026.
+
+% Evaluation
+\bibitem{bai2023longbench} Bai, Y., et al. LongBench: A bilingual, multitask benchmark for long context understanding. arXiv:2308.14508, 2023.
+\bibitem{hsieh2024ruler} Hsieh, C.-P., et al. RULER: What's the real context size of your long-context language models? arXiv:2404.06654, 2024.
+\bibitem{li2024snapkv} Li, Y., et al. SnapKV: LLM knows what you are looking for before generation. arXiv:2404.14469, 2024.
+
+\end{thebibliography}
+
+\appendix
+\section{Proofs and Derivations}
+\label{app:proofs}
+
+\subsection{Detailed Proof of Theorem~\ref{thm:ordering}}
+\label{app:proof_order}
+
+\textbf{Step 1: Explicit feasible domain.}
+
+From constraint~\eqref{eq:hbm}, when $R = R_{\min}$ is fixed:
+\[
+M^*(\rho) = \frac{C_{\text{HBM}}(1-\rho)}{N_{\text{block}} R_{\min} C_{\text{unit}}} = K(1-\rho),
+\]
+where $K = \frac{C_{\text{HBM}}}{N_{\text{block}} R_{\min} C_{\text{unit}}}$ is a constant.
+
+\textbf{Step 2: Compute $\delta_M$.}
+
+\[
+\delta_M = M^*(\rho) - M_{\min} = K(1-\rho) - K(1-\rho_{\text{ctx}}) = K(\rho_{\text{ctx}} - \rho).
+\]
+
+\textbf{Step 3: Derive $\Delta(\rho)$.}
+
+The total error constraint is $\mathcal{E}(R_{\min}, M, T, 0) = \mathcal{E}_{\text{target}}$. Expanding and ignoring coupling terms:
+\[
+\Delta(\rho) = \mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}} - \frac{\beta + \delta 2^{-2R_{\min}}}{M^*(\rho)S}.
+\]
+
+Let $C = \beta + \delta 2^{-2R_{\min}}$. Using $M_{\min} = \frac{C}{S(\mathcal{E}_{\text{target}} - \alpha 2^{-2R_{\min}})}$:
+\[
+\Delta(\rho) = \frac{C}{M_{\min}S} - \frac{C}{M^*(\rho)S} = \frac{C \cdot \delta_M}{S \cdot M_{\min} M^*(\rho)}.
+\]
+
+As $\rho \to \rho_{\text{ctx}}^-$, $M^*(\rho) \to M_{\min}$, so:
+\[
+\Delta(\rho) \approx \frac{C \cdot K (\rho_{\text{ctx}} - \rho)}{S \cdot M_{\min}^2} \propto (\rho_{\text{ctx}} - \rho).
+\]
+
+\textbf{Step 4: Derive $T^*$ divergence.}
+
+From $\gamma/\sqrt{T^*} = \Delta(\rho)$:
+\[
+T^* = \frac{\gamma^2}{\Delta(\rho)^2} = \frac{\gamma^2 S^2 M_{\min}^4}{C^2 K^2 (\rho_{\text{ctx}} - \rho)^2} = \frac{C_T}{(\rho_{\text{ctx}} - \rho)^2}.
+\]
+
+\textbf{Step 5: Prove $\rho_{\text{comp}} < \rho_{\text{ctx}}$.}
+
+Since $T^*(\rho) \to +\infty$ as $\rho \to \rho_{\text{ctx}}^-$ while $T_{\max}$ remains finite, there exists a unique $\rho_{\text{comp}} < \rho_{\text{ctx}}$ where $T^*(\rho_{\text{comp}}) = T_{\max}$.
+
+\textbf{Step 6: Compute the gap.}
+
+Solving $T^*(\rho_{\text{comp}}) = T_{\max}$:
+\[
+\rho_{\text{ctx}} - \rho_{\text{comp}} = \sqrt{\frac{C_T}{T_{\max}}} = \Theta(1/\sqrt{T_{\max}}).
+\]
+
+\subsection{Proof of Theorem~\ref{thm:arbitrage}}
+\label{app:proof_arbitrage}
+
+The condition $\rho_{\text{ctx}}^E > \rho_{\text{ctx}}$ is equivalent to $M_{\min}^E < M_{\min}$. Substituting the definitions:
+\[
+\frac{A}{B} < \frac{A_0}{B_0},
+\]
+where $A, B, A_0, B_0$ are as defined in Theorem~\ref{thm:arbitrage}. In the limit $r_{\min} = 0$ and $E_{\max} \gg E_0$, we have $f(E_{\max}) \approx 1-\zeta$ and $r(E_{\max}) \approx \eta/E_{\max}$. Substituting and simplifying yields the stated condition.
+
+\section{Algorithm Pseudocode}
+\label{app:algorithms}
+
+\begin{algorithm}[h]
+\caption{MATDO-E Resource Scheduler}
+\label{alg:scheduler}
+\begin{algorithmic}[1]
+\Require Target error $\mathcal{E}_{\text{target}}$, HBM budget $C_{\text{HBM}}$, DRAM budget $C_{\text{DRAM}}$, compute budget $\mathcal{B}_{\max}$
+\Ensure Optimal knobs $(R^*, M^*, T^*, E^*)$
+\State Estimate parameters $(\alpha, \beta, \gamma, \delta, \epsilon, \zeta, \eta)$ via online RLS
+\State Compute $M_{\min}$ using Eq.~\eqref{eq:Mmin}
+\State Compute $\rho_{\text{ctx}}$ using Eq.~\eqref{eq:ctxwall}
+\If{Engram arbitrage condition (Theorem~\ref{thm:arbitrage}) satisfied}
+    \State $E^* \gets E_{\max}$
+    \State Recompute $M_{\min}^E$ using Eq.~\eqref{eq:MminE}
+\Else
+    \State $E^* \gets 0$
+\EndIf
+\State $M^* \gets \min\left(\frac{C_{\text{HBM}}(1-\rho)}{N_{\text{block}} R_{\min} C_{\text{unit}}}, M_{\max}\right)$
+\State $T^* \gets \frac{\gamma^2}{\Delta(\rho)^2}$ using residual error budget
+\State $R^* \gets R_{\min}$ \Comment{Typically fixed to minimum}
+\State \Return $(R^*, M^*, T^*, E^*)$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Implementation Details}
+\label{app:implementation}
+
+\subsection{Online RLS Parameter Estimation}
+We use recursive least squares with forgetting factor $\lambda = 0.95$:
+\begin{align*}
+\mathbf{P}_{t} &= \frac{1}{\lambda}\left(\mathbf{P}_{t-1} - \frac{\mathbf{P}_{t-1}\mathbf{x}_t\mathbf{x}_t^\top\mathbf{P}_{t-1}}{\lambda + \mathbf{x}_t^\top\mathbf{P}_{t-1}\mathbf{x}_t}\right), \\
+\boldsymbol{\theta}_{t} &= \boldsymbol{\theta}_{t-1} + \mathbf{P}_{t}\mathbf{x}_t(y_t - \mathbf{x}_t^\top\boldsymbol{\theta}_{t-1}),
+\end{align*}
+where $\mathbf{x}_t$ is the feature vector and $y_t$ is the observed error.
+
+\subsection{Hardware Constants}
+\begin{table}[h]
+\centering
+\caption{Hardware constants for NVIDIA A100 80GB}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Symbol & Value \\
+\midrule
+$C_{\text{HBM}}$ & 80 GB \\
+$C_{\text{DRAM}}$ & 512 GB \\
+$C_{\text{unit}}$ & 2 bytes (FP16) \\
+$N_{\text{block}}$ & 256 tokens \\
+$S = N_{\text{block}} \cdot d$ & $256 \times 4096$ elements \\
+$d$ (hidden dim) & 4096 (LLaMA-2-7B) \\
+$L$ (Engram entry) & 4096 bytes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Additional Experimental Results}
+\label{app:extra}
+
+\subsection{Coupling-term Sensitivity}
+Ignoring coupling terms $(\delta,\epsilon)$ changes predicted $\rho_{\text{ctx}}$ by less than 0.02 across all models (relative shift $<2\%$), validating their omission in closed-form derivations.
+
+\subsection{Wall-shift Consistency}
+Shift from baseline to MATDO-E: LLaMA-2: 0.06, Mistral: 0.07, Qwen: 0.05.
+
+\subsection{Latency Scaling Near Wall}
+Observed exponent of $(1-\rho)^{-1.9}$ (95\% CI: [$-2.05$, $-1.75$]), close to theoretical $-2$.
+
+\end{document}

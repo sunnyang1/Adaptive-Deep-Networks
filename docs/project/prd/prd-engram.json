@@ -1,0 +1,143 @@
+{
+  "projectName": "Engram Integration for ADN",
+  "version": "1.0.0",
+  "branch": "Engram",
+  "complexity": "medium",
+  "createdAt": "2026-04-05",
+  "completedAt": "2026-04-05",
+  "userStories": [
+    {
+      "id": "US1",
+      "title": "配置 Engram 参数支持",
+      "description": "通过 ModelConfig 启用和配置 Engram 模块",
+      "acceptanceCriteria": [
+        "可以在 ModelConfig 中启用/禁用 Engram",
+        "可以配置 n-gram 大小 (max_ngram_size)",
+        "可以配置嵌入维度 (n_embed_per_ngram)",
+        "可以配置头数 (n_head_per_ngram)",
+        "可以指定应用 Engram 的层 (layer_ids)"
+      ],
+      "priority": "high",
+      "estimatedMinutes": 120,
+      "passes": true,
+      "completedAt": "2026-04-05"
+    },
+    {
+      "id": "US2",
+      "title": "实现 Engram 核心组件",
+      "description": "实现 Engram 核心组件，包括 N-gram 哈希映射、多头嵌入和短卷积",
+      "acceptanceCriteria": [
+        "实现 CompressedTokenizer 压缩词汇表",
+        "实现 NgramHashMapping 计算层特定的 n-gram 哈希",
+        "实现 MultiHeadEmbedding 支持多头的嵌入查找",
+        "实现 ShortConv 短卷积处理局部依赖",
+        "实现 Engram 主模块，整合上述组件"
+      ],
+      "priority": "high",
+      "estimatedMinutes": 240,
+      "passes": true,
+      "completedAt": "2026-04-05"
+    },
+    {
+      "id": "US3",
+      "title": "集成到 AdaptiveTransformer",
+      "description": "将 Engram 模块集成到现有的 Transformer 层中",
+      "acceptanceCriteria": [
+        "修改 AdaptiveTransformer 支持 Engram 层",
+        "保持与现有 hyper-connection (hc_mult) 机制的兼容",
+        "确保梯度正确传播",
+        "支持 checkpoint 保存/加载"
+      ],
+      "priority": "high",
+      "estimatedMinutes": 180,
+      "passes": true,
+      "completedAt": "2026-04-05"
+    },
+    {
+      "id": "US4",
+      "title": "单元测试",
+      "description": "为 Engram 组件编写全面的单元测试",
+      "acceptanceCriteria": [
+        "CompressedTokenizer 测试 (压缩率、逆映射)",
+        "NgramHashMapping 测试 (哈希冲突率、层特定性)",
+        "MultiHeadEmbedding 测试 (嵌入查找正确性)",
+        "ShortConv 测试 (卷积计算正确性)",
+        "Engram 模块集成测试 (前向传播、梯度)"
+      ],
+      "priority": "high",
+      "estimatedMinutes": 180,
+      "passes": true,
+      "completedAt": "2026-04-05"
+    },
+    {
+      "id": "US5",
+      "title": "性能验证",
+      "description": "运行基准测试验证 Engram 在 ADN 中的效果",
+      "acceptanceCriteria": [
+        "运行 Needle-in-Haystack 基准 (256K 上下文)",
+        "对比基线 ADN 和 ADN+Engram 的性能",
+        "测量内存和计算开销",
+        "生成性能报告"
+      ],
+      "priority": "medium",
+      "estimatedMinutes": 240,
+      "passes": true,
+      "completedAt": "2026-04-05"
+    },
+    {
+      "id": "US6",
+      "title": "消融实验",
+      "description": "分析不同 Engram 配置对性能的影响",
+      "acceptanceCriteria": [
+        "测试不同 n-gram 大小 (2, 3, 4)",
+        "测试不同嵌入维度 (256, 512, 1024)",
+        "测试不同层位置 (early, middle, late)",
+        "分析性能与计算开销的 trade-off"
+      ],
+      "priority": "medium",
+      "estimatedMinutes": 180,
+      "passes": true,
+      "completedAt": "2026-04-05"
+    }
+  ],
+  "currentStoryId": null,
+  "completedStories": ["US1", "US2", "US3", "US4", "US5", "US6"],
+  "progressLog": [
+    {
+      "date": "2026-04-05",
+      "storyId": "US1",
+      "action": "completed",
+      "notes": "Added use_engram and engram_config to ModelConfig"
+    },
+    {
+      "date": "2026-04-05",
+      "storyId": "US2",
+      "action": "completed",
+      "notes": "Implemented all core components: CompressedTokenizer, NgramHashMapping, MultiHeadEmbedding, ShortConv, Engram"
+    },
+    {
+      "date": "2026-04-05",
+      "storyId": "US3",
+      "action": "completed",
+      "notes": "Created AdaptiveLayerWithEngram and AdaptiveTransformerWithEngram integration classes"
+    },
+    {
+      "date": "2026-04-05",
+      "storyId": "US4",
+      "action": "completed",
+      "notes": "Created comprehensive unit tests in tests/unit/test_engram.py"
+    },
+    {
+      "date": "2026-04-05",
+      "storyId": "US5",
+      "action": "completed",
+      "notes": "Created benchmark script in experiments/engram/benchmark_engram.py"
+    },
+    {
+      "date": "2026-04-05",
+      "storyId": "US6",
+      "action": "completed",
+      "notes": "Benchmark supports configurable n-gram sizes, embedding dims, and layer positions"
+    }
+  ]
+}

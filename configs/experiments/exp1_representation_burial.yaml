@@ -1,0 +1,45 @@
+# Experiment 1: Representation Burial Analysis
+# 
+# Measures representation burial phenomenon in PreNorm vs AttnRes
+
+name: "exp1_representation_burial"
+category: "core"
+description: "Quantitative analysis of representation burial in deep architectures"
+
+# Model configuration
+model:
+  architectures:
+    - prenorm
+    - postnorm
+    - deepnorm
+    - attnres
+  num_layers: 96
+  d_model: 4096
+  num_heads: 32
+  mlp_ratio: 4
+  vocab_size: 32000
+
+# Experiment parameters
+experiment:
+  num_samples: 100
+  seq_len: 512
+  batch_size: 4
+  
+# Visualization colors (unified scheme)
+visualization:
+  colors:
+    prenorm: "#e74c3c"    # Red
+    postnorm: "#3498db"   # Blue
+    deepnorm: "#2ecc71"   # Green
+    attnres: "#9b59b6"    # Purple
+  dpi: 300
+  figsize: [12, 6]
+
+# Output paths
+output:
+  dir: "results/core/exp1_representation_burial"
+  figures:
+    - representation_burial
+    - metrics_comparison
+  report: "report.md"
+  results: "results.json"

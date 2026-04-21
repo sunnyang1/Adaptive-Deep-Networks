@@ -1,0 +1,21 @@
+# QASP Code-Paper Alignment — Progress Log
+
+## 2026-04-20
+
+### Completed Stories
+- **QASP-5** Stiefel Projection Convergence Diagnostics — Added `return_diagnostics` to `project_to_stiefel`; validated <1e-4 error for paper-like dimensions (d=2048, k=16).
+- **QASP-2** Real Needle-in-Haystack Benchmark — Replaced synthetic stub with actual insertion + forward + exact-match evaluation; supports position distributions.
+- **QASP-7** Statistical Testing Utilities — Added `paired_t_test`, `bootstrap_ci`, `cohens_d` in `QASP/experiments/stats.py` with full unit tests.
+- **QASP-6** Optimized Generation API — `QASPGenerator` now uses `prefill` + `step` when the model supports it; falls back to naive forward otherwise.
+- **QASP-4** NgramMemory Write Integration — Added `batch_write` to `NgramMemory`; `forward` and `prefill` now populate memory so retrieval returns non-zero entries.
+- **QASP-3** Ponder-Gated Quality Scores — Quality scores computed once per forward/prefill and reused across layers; `adapt_at_test_time` lazily computes quality only when ponder gate fires.
+- **QASP-1** True Matrix-Level Stiefel Query — Added `use_stiefel_query` config flag; when enabled, `CausalSelfAttention` uses `stiefel_query` directly as query projection instead of the optional overlay.
+
+### Test Results
+- All 95 QASP unit + integration tests pass.
+- No regressions in existing parity contracts.
+
+### Known Limitations (documented)
+- `use_stiefel_query=True` requires `stiefel_query` shape `[d, d]`; square matrices need ~15 Newton-Schulz iterations for tight orthonormality (vs 5 for tall matrices).
+- Benchmark accuracy from random weights is near-chance; the pipeline is real, but a trained model is needed for meaningful scores.
+- NgramMemory writes are CPU-side Python loops; acceptable for research artifact, not production scale.

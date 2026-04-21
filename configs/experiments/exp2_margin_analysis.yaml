@@ -1,0 +1,47 @@
+# Experiment 2: Logit Margin Analysis
+#
+# Validates Bansal et al. logit margin requirements: Ω(log T)
+# Demonstrates qTTT implementation achieving this requirement
+
+name: "exp2_margin_analysis"
+category: "core"
+description: "Analysis of logit margin requirements across context lengths"
+
+model:
+  vocab_size: 10000
+  d_model: 1024
+  num_layers: 12
+  num_heads: 16
+  mlp_ratio: 4
+
+experiment:
+  context_lengths: [512, 1024, 2048, 4096, 8192]
+  num_samples: 100
+  needle_token: 42
+  epsilon: 0.1  # Target attention mass threshold (1 - epsilon)
+
+conditions:
+  - id: vanilla
+    label: "Standard Transformer"
+    description: "Baseline transformer without modifications"
+  - id: attnres
+    label: "AttnRes"
+    description: "With Attention Residuals"
+  - id: attnres_qttt
+    label: "AttnRes + qTTT"
+    description: "With AttnRes and qTTT adaptation"
+
+visualization:
+  colors:
+    vanilla: "#95a5a6"      # Gray
+    attnres: "#9b59b6"      # Purple
+    attnres_qttt: "#f39c12" # Orange
+  dpi: 300
+
+output:
+  dir: "results/core/exp2_margin_analysis"
+  figures:
+    - margin_vs_context
+    - margin_distribution
+  report: "report.md"
+  results: "results.json"

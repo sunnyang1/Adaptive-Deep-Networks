@@ -1,0 +1,47 @@
+[
+  {
+    "id": "msg-1775035278766-bglcg7",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "请确认你们已经收到任务并开始执行。完成后发送消息给 \"main\" 汇报进度。",
+    "timestamp": "2026-04-01T09:21:18.766Z",
+    "read": true
+  },
+  {
+    "id": "msg-1775035339353-fruicu",
+    "from": "team-lead",
+    "to": "table5-dev",
+    "type": "message",
+    "content": "请汇报当前进度。你的文件都创建完成了吗？",
+    "timestamp": "2026-04-01T09:22:19.353Z",
+    "read": true
+  },
+  {
+    "id": "msg-1775035359393-zprso6",
+    "from": "team-lead",
+    "to": "table5-dev",
+    "type": "message",
+    "content": "如果 experiment.py 和 run_table5.py 都已完成，请发送 \"done\" 给 main。",
+    "timestamp": "2026-04-01T09:22:39.393Z",
+    "read": true
+  },
+  {
+    "id": "msg-1775035382224-t7f7z3",
+    "from": "team-lead",
+    "to": "table5-dev",
+    "type": "message",
+    "content": "请尽快完成所有文件。完成后立即通知 main。",
+    "timestamp": "2026-04-01T09:23:02.224Z",
+    "read": true
+  },
+  {
+    "id": "shutdown-1775035901309",
+    "from": "team-lead",
+    "to": "table5-dev",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1775035901309\",\"reason\":\"Work complete. Shutting down.\",\"from\":\"team-lead\",\"timestamp\":\"2026-04-01T09:31:41.309Z\"}",
+    "timestamp": "2026-04-01T09:31:41.309Z",
+    "read": true
+  }
+]

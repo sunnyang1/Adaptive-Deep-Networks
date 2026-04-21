@@ -1,0 +1,238 @@
+{
+  "experiment": "rabitq_microbenchmarks",
+  "device": "cpu",
+  "quick_mode": true,
+  "configurations": {
+    "k4_v2": {
+      "config": "k4_v2",
+      "seq_length_results": [
+        {
+          "seq_len": 128,
+          "fit": {
+            "mean_ms": 390.556,
+            "median_ms": 390.663,
+            "std_ms": 10.181,
+            "min_ms": 380.236,
+            "max_ms": 401.689,
+            "repeats": 5
+          },
+          "compress": {
+            "mean_ms": 327.68,
+            "median_ms": 326.957,
+            "std_ms": 4.102,
+            "min_ms": 321.827,
+            "max_ms": 334.658,
+            "repeats": 10
+          },
+          "decompress": {
+            "mean_ms": 304.011,
+            "median_ms": 299.642,
+            "std_ms": 11.903,
+            "min_ms": 295.815,
+            "max_ms": 332.68,
+            "repeats": 10
+          },
+          "end_to_end": {
+            "mean_ms": 1055.807,
+            "median_ms": 1062.259,
+            "std_ms": 35.815,
+            "min_ms": 1004.477,
+            "max_ms": 1103.577,
+            "repeats": 5
+          },
+          "total_elements": 262144
+        },
+        {
+          "seq_len": 512,
+          "fit": {
+            "mean_ms": 344.932,
+            "median_ms": 345.715,
+            "std_ms": 9.779,
+            "min_ms": 334.907,
+            "max_ms": 356.086,
+            "repeats": 5
+          },
+          "compress": {
+            "mean_ms": 1325.667,
+            "median_ms": 1294.586,
+            "std_ms": 100.418,
+            "min_ms": 1267.234,
+            "max_ms": 1602.635,
+            "repeats": 10
+          },
+          "decompress": {
+            "mean_ms": 1266.64,
+            "median_ms": 1239.86,
+            "std_ms": 90.501,
+            "min_ms": 1182.897,
+            "max_ms": 1425.901,
+            "repeats": 10
+          },
+          "end_to_end": {
+            "mean_ms": 2898.959,
+            "median_ms": 2904.62,
+            "std_ms": 79.242,
+            "min_ms": 2810.927,
+            "max_ms": 3020.011,
+            "repeats": 5
+          },
+          "total_elements": 1048576
+        }
+      ]
+    },
+    "k3_v2": {
+      "config": "k3_v2",
+      "seq_length_results": [
+        {
+          "seq_len": 128,
+          "fit": {
+            "mean_ms": 257.353,
+            "median_ms": 256.173,
+            "std_ms": 6.189,
+            "min_ms": 250.026,
+            "max_ms": 266.904,
+            "repeats": 5
+          },
+          "compress": {
+            "mean_ms": 165.309,
+            "median_ms": 163.556,
+            "std_ms": 4.604,
+            "min_ms": 161.732,
+            "max_ms": 176.626,
+            "repeats": 10
+          },
+          "decompress": {
+            "mean_ms": 150.602,
+            "median_ms": 149.83,
+            "std_ms": 2.942,
+            "min_ms": 147.345,
+            "max_ms": 155.664,
+            "repeats": 10
+          },
+          "end_to_end": {
+            "mean_ms": 578.762,
+            "median_ms": 573.55,
+            "std_ms": 15.99,
+            "min_ms": 568.892,
+            "max_ms": 607.099,
+            "repeats": 5
+          },
+          "total_elements": 262144
+        },
+        {
+          "seq_len": 512,
+          "fit": {
+            "mean_ms": 160.065,
+            "median_ms": 154.356,
+            "std_ms": 13.083,
+            "min_ms": 153.081,
+            "max_ms": 183.397,
+            "repeats": 5
+          },
+          "compress": {
+            "mean_ms": 659.225,
+            "median_ms": 658.101,
+            "std_ms": 6.805,
+            "min_ms": 650.216,
+            "max_ms": 672.591,
+            "repeats": 10
+          },
+          "decompress": {
+            "mean_ms": 604.467,
+            "median_ms": 598.724,
+            "std_ms": 19.608,
+            "min_ms": 582.416,
+            "max_ms": 648.604,
+            "repeats": 10
+          },
+          "end_to_end": {
+            "mean_ms": 1473.16,
+            "median_ms": 1436.896,
+            "std_ms": 83.939,
+            "min_ms": 1380.329,
+            "max_ms": 1586.812,
+            "repeats": 5
+          },
+          "total_elements": 1048576
+        }
+      ]
+    },
+    "k2_v2": {
+      "config": "k2_v2",
+      "seq_length_results": [
+        {
+          "seq_len": 128,
+          "fit": {
+            "mean_ms": 86.412,
+            "median_ms": 85.979,
+            "std_ms": 1.482,
+            "min_ms": 85.394,
+            "max_ms": 89.023,
+            "repeats": 5
+          },
+          "compress": {
+            "mean_ms": 332.573,
+            "median_ms": 320.277,
+            "std_ms": 32.684,
+            "min_ms": 315.787,
+            "max_ms": 423.64,
+            "repeats": 10
+          },
+          "decompress": {
+            "mean_ms": 305.299,
+            "median_ms": 295.261,
+            "std_ms": 17.593,
+            "min_ms": 292.667,
+            "max_ms": 343.658,
+            "repeats": 10
+          },
+          "end_to_end": {
+            "mean_ms": 730.749,
+            "median_ms": 699.93,
+            "std_ms": 69.767,
+            "min_ms": 696.678,
+            "max_ms": 855.488,
+            "repeats": 5
+          },
+          "total_elements": 262144
+        },
+        {
+          "seq_len": 512,
+          "fit": {
+            "mean_ms": 118.313,
+            "median_ms": 107.422,
+            "std_ms": 22.318,
+            "min_ms": 107.23,
+            "max_ms": 158.104,
+            "repeats": 5
+          },
+          "compress": {
+            "mean_ms": 1282.366,
+            "median_ms": 1273.29,
+            "std_ms": 21.17,
+            "min_ms": 1263.494,
+            "max_ms": 1325.159,
+            "repeats": 10
+          },
+          "decompress": {
+            "mean_ms": 1172.787,
+            "median_ms": 1171.501,
+            "std_ms": 10.709,
+            "min_ms": 1160.127,
+            "max_ms": 1193.522,
+            "repeats": 10
+          },
+          "end_to_end": {
+            "mean_ms": 2576.171,
+            "median_ms": 2577.224,
+            "std_ms": 25.662,
+            "min_ms": 2537.119,
+            "max_ms": 2604.738,
+            "repeats": 5
+          },
+          "total_elements": 1048576
+        }
+      ]
+    }
+  }
+}

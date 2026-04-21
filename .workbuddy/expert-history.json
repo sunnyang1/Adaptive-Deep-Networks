@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "sessions": {
+    "7521a595303d42988a70bb7d17682119": [
+      {
+        "expertId": "AiEngineer",
+        "name": "Amy",
+        "profession": "AI工程师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/AiEngineer/AiEngineer.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/AiEngineer/AiEngineer_zh.md",
+        "usedAt": 1774576621439,
+        "industryId": "02-Engineering"
+      }
+    ],
+    "b0dba787b7774c228a5262277c7512ad": [
+      {
+        "expertId": "AiEngineer",
+        "name": "Amy",
+        "profession": "AI工程师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/AiEngineer/AiEngineer.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/AiEngineer/AiEngineer_zh.md",
+        "usedAt": 1774535532484,
+        "industryId": "02-Engineering"
+      }
+    ]
+  },
+  "lastUpdated": 1774578569755
+}

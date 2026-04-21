@@ -1,0 +1,281 @@
+"""
+Training Utilities
+
+Shared training functions and checkpoint management.
+"""
+
+import shutil
+import torch
+import torch.nn as nn
+from pathlib import Path
+from typing import Any, Dict, Optional
+from dataclasses import dataclass
+
+
+class CheckpointError(Exception):
+    """Error saving or loading checkpoint."""
+
+    pass
+
+
+@dataclass
+class Checkpoint:
+    """Checkpoint data structure."""
+
+    epoch: int
+    model_state_dict: Dict[str, Any]
+    optimizer_state_dict: Dict[str, Any]
+    loss: float
+    metrics: Dict[str, float]
+    config: Dict[str, Any]
+
+
+class CheckpointManager:
+    """
+    Manage model checkpoints with versioning and cleanup.
+    """
+
+    def __init__(self, checkpoint_dir: Path, max_checkpoints: int = 5, keep_best: bool = True):
+        self.checkpoint_dir = Path(checkpoint_dir)
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.max_checkpoints = max_checkpoints
+        self.keep_best = keep_best
+        self.best_metric = float("inf")
+
+    def save(
+        self,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        epoch: int,
+        loss: float,
+        metrics: Optional[Dict[str, float]] = None,
+        config: Optional[Dict[str, Any]] = None,
+        is_best: bool = False,
+        extra_state: Optional[Dict[str, Any]] = None,
+    ) -> Path:
+        """
+        Save checkpoint.
+
+        Args:
+            model: Model to save
+            optimizer: Optimizer state
+            epoch: Current epoch
+            loss: Current loss
+            metrics: Additional metrics
+            config: Model configuration
+            is_best: Whether this is the best model so far
+
+        Returns:
+            Path to saved checkpoint
+        """
+        checkpoint = {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "loss": loss,
+            "metrics": metrics or {},
+            "config": config or {},
+        }
+        if extra_state:
+            checkpoint.update(extra_state)
+
+        # Save latest (full state for resume)
+        latest_path = self.checkpoint_dir / "checkpoint_latest.pt"
+        self._save_torch_checkpoint(checkpoint, latest_path, "latest checkpoint")
+
+        # Save epoch-specific (full state for historical resume)
+        epoch_path = self.checkpoint_dir / f"checkpoint_epoch_{epoch}.pt"
+        self._save_torch_checkpoint(checkpoint, epoch_path, f"epoch checkpoint (epoch={epoch})")
+
+        # Save best if applicable (weights-only to reduce disk footprint)
+        if is_best and self.keep_best:
+            best_path = self.checkpoint_dir / "checkpoint_best.pt"
+            best_checkpoint = {
+                "epoch": epoch,
+                "model_state_dict": checkpoint["model_state_dict"],
+                "loss": loss,
+                "metrics": metrics or {},
+                "config": config or {},
+                "weights_only": True,
+            }
+            self._save_torch_checkpoint(best_checkpoint, best_path, "best checkpoint")
+
+        # Cleanup old checkpoints
+        self._cleanup_old_checkpoints()
+
+        return epoch_path
+
+    def load(
+        self,
+        model: nn.Module,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        checkpoint_path: Optional[Path] = None,
+        map_location: Any = None,
+    ) -> Dict[str, Any]:
+        """
+        Load checkpoint.
+
+        Args:
+            model: Model to load into
+            optimizer: Optional optimizer to load
+            checkpoint_path: Specific checkpoint (None for latest)
+
+        Returns:
+            Checkpoint dictionary
+        """
+        if checkpoint_path is None:
+            checkpoint_path = self.checkpoint_dir / "checkpoint_latest.pt"
+
+        if not checkpoint_path.exists():
+            raise CheckpointError(f"Checkpoint not found: {checkpoint_path}")
+
+        try:
+            checkpoint = torch.load(
+                checkpoint_path,
+                map_location=map_location if map_location is not None else "cpu",
+                weights_only=False,
+            )
+        except Exception as e:
+            raise CheckpointError(f"Failed to load checkpoint: {e}")
+
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+        if optimizer is not None and "optimizer_state_dict" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+        return checkpoint
+
+    def load_scheduler(self, scheduler: Any, checkpoint: Dict[str, Any]) -> None:
+        """Restore LR scheduler state if present in checkpoint."""
+        key = "scheduler_state_dict"
+        if key in checkpoint and checkpoint[key] is not None:
+            scheduler.load_state_dict(checkpoint[key])
+
+    def _cleanup_old_checkpoints(self):
+        """Remove old checkpoints keeping only max_checkpoints."""
+        checkpoints = sorted(
+            self.checkpoint_dir.glob("checkpoint_epoch_*.pt"),
+            key=lambda p: int(p.stem.split("_")[-1]),
+        )
+
+        while len(checkpoints) > self.max_checkpoints:
+            old_checkpoint = checkpoints.pop(0)
+            old_checkpoint.unlink()
+
+    def _save_torch_checkpoint(self, payload: Dict[str, Any], path: Path, label: str) -> None:
+        """Save a checkpoint payload with better disk-related diagnostics."""
+        try:
+            torch.save(payload, path)
+        except (OSError, IOError, RuntimeError) as e:
+            usage = shutil.disk_usage(self.checkpoint_dir)
+            free_gb = usage.free / (1024**3)
+            total_gb = usage.total / (1024**3)
+            raise CheckpointError(
+                f"Failed to save {label} to {path}: {e} "
+                f"(disk free: {free_gb:.2f} GB / {total_gb:.2f} GB)"
+            ) from e
+
+
+def compute_loss(
+    model: nn.Module,
+    batch: Dict[str, torch.Tensor],
+    criterion: nn.Module,
+    device: torch.device,
+    model_forward_kwargs: Optional[Dict[str, Any]] = None,
+) -> torch.Tensor:
+    """
+    Compute loss for a batch.
+
+    Args:
+        model: Model
+        batch: Batch dictionary with 'input_ids' and 'labels'
+        criterion: Loss criterion
+        device: Device
+
+    Returns:
+        Loss tensor
+    """
+    input_ids = batch["input_ids"].to(device)
+    labels = batch["labels"].to(device)
+
+    forward_kwargs = model_forward_kwargs or {}
+    outputs = model(input_ids, **forward_kwargs)
+
+    # Handle different output formats
+    if hasattr(outputs, "logits"):
+        logits = outputs.logits
+    else:
+        logits = outputs
+
+    # Compute loss
+    loss = criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
+
+    return loss
+
+
+def train_step(
+    model: nn.Module,
+    batch: Dict[str, torch.Tensor],
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    device: torch.device,
+    gradient_accumulation_steps: int = 1,
+    model_forward_kwargs: Optional[Dict[str, Any]] = None,
+) -> float:
+    """
+    Single training step.
+
+    Args:
+        model: Model
+        batch: Batch data
+        optimizer: Optimizer
+        criterion: Loss criterion
+        device: Device
+        gradient_accumulation_steps: Number of steps to accumulate gradients
+
+    Returns:
+        Loss value
+    """
+    loss = compute_loss(
+        model,
+        batch,
+        criterion,
+        device,
+        model_forward_kwargs=model_forward_kwargs,
+    )
+
+    # Scale loss for gradient accumulation
+    if gradient_accumulation_steps > 1:
+        loss = loss / gradient_accumulation_steps
+
+    # Backward pass
+    loss.backward()
+
+    # Update weights only after accumulation
+    # Note: optimizer.step() and zero_grad() should be called
+    # outside this function after accumulation
+
+    return loss.item()
+
+
+def get_optimizer(
+    model: nn.Module, lr: float = 3e-4, weight_decay: float = 0.1, betas: tuple = (0.9, 0.95)
+) -> torch.optim.Optimizer:
+    """Create AdamW optimizer."""
+    return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay, betas=betas)
+
+
+def get_scheduler(optimizer: torch.optim.Optimizer, num_warmup_steps: int, num_training_steps: int):
+    """Create linear warmup + cosine decay scheduler."""
+    from torch.optim.lr_scheduler import LambdaLR
+    import math
+
+    def lr_lambda(current_step: int):
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+        progress = float(current_step - num_warmup_steps) / float(
+            max(1, num_training_steps - num_warmup_steps)
+        )
+        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+    return LambdaLR(optimizer, lr_lambda)

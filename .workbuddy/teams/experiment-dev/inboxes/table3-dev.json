@@ -1,0 +1,56 @@
+[
+  {
+    "id": "msg-1775035278766-bglcg7",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "请确认你们已经收到任务并开始执行。完成后发送消息给 \"main\" 汇报进度。",
+    "timestamp": "2026-04-01T09:21:18.766Z",
+    "read": true
+  },
+  {
+    "id": "msg-1775035339437-knx55i",
+    "from": "team-lead",
+    "to": "table3-dev",
+    "type": "message",
+    "content": "请汇报当前进度。你的文件都创建完成了吗？",
+    "timestamp": "2026-04-01T09:22:19.437Z",
+    "read": true
+  },
+  {
+    "id": "msg-1775035361058-kh8rha",
+    "from": "team-lead",
+    "to": "table3-dev",
+    "type": "message",
+    "content": "如果 experiment.py 和 run_table3.py 都已完成，请发送 \"done\" 给 main。",
+    "timestamp": "2026-04-01T09:22:41.058Z",
+    "read": true
+  },
+  {
+    "id": "msg-1775035383192-1l3lge",
+    "from": "team-lead",
+    "to": "table3-dev",
+    "type": "message",
+    "content": "请尽快完成所有文件。完成后立即通知 main。",
+    "timestamp": "2026-04-01T09:23:03.192Z",
+    "read": true
+  },
+  {
+    "id": "msg-1775035576645-914w0f",
+    "from": "team-lead",
+    "to": "table3-dev",
+    "type": "message",
+    "content": "请立即汇报你的进度。你需要创建 experiment.py 和 run_table3.py。如果遇到问题请告知。",
+    "timestamp": "2026-04-01T09:26:16.645Z",
+    "read": true
+  },
+  {
+    "id": "shutdown-1775035901306",
+    "from": "team-lead",
+    "to": "table3-dev",
+    "type": "shutdown_request",
+    "content": "{\"type\":\"shutdown_request\",\"request_id\":\"shutdown-1775035901306\",\"reason\":\"Work complete. Shutting down.\",\"from\":\"team-lead\",\"timestamp\":\"2026-04-01T09:31:41.306Z\"}",
+    "timestamp": "2026-04-01T09:31:41.306Z",
+    "read": true
+  }
+]

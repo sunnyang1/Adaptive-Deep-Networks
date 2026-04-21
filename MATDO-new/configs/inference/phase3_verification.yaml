@@ -1,0 +1,27 @@
+runtime:
+  mode: generate
+  root_config: ../default.yaml
+
+model:
+  model_size: t4
+  use_attnres: false
+  use_qttt: false
+  use_engram: false
+  sampling_temperature: 1.0
+  sampling_top_k:
+
+prompt:
+  token_ids: [11, 22, 33]
+
+generation:
+  max_new_tokens: 2
+  stop_token_ids: []
+
+observation:
+  rho_hbm: 0.92
+  rho_dram: 0.30
+  target_error: 0.05
+
+output:
+  emit_metrics: true
+  format: json
