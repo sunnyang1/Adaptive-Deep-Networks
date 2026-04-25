@@ -94,7 +94,7 @@ where $f(E) = 1 - \zeta(1 - e^{-E/E_0})$ captures Engram's compensation for miss
 $$
 r(E)=
 \begin{cases}
-0, & E=0 
+0, & E=0
 \eta/E, & E>0
 \end{cases}
 $$

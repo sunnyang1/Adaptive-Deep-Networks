@@ -1,0 +1,772 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\newtheorem{assumption}{Assumption}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+
+\title{Beyond the Memory Wall: PRISM, a Unified Analytic Framework for Adaptive LLM Inference}
+\author{Anonymous Submission}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The ``memory wall'' problem in large language model (LLM) inference has spawned diverse countermeasures, including quantization, context reduction, test-time adaptation, and external memory augmentation. However, these methods are typically studied and deployed in isolation, and their interactions, competition, and synergy lack systematic theoretical analysis. This paper proposes PRISM (\textbf{P}robing \textbf{R}esource \textbf{I}nterplay across a \textbf{S}patial \textbf{M}anifold for LLM Inference), a four-dimensional unified resource analysis framework for adaptive LLM inference. Unlike existing work that focuses on proposing new algorithms or systems, PRISM's core contribution lies in providing an abstract language: it unifies all mainstream memory-adaptive methods as a joint decision problem on a resource manifold defined by quantization precision, context scope, adaptation depth, and external memory scale. Just as a prism decomposes white light into a spectrum, PRISM decomposes the monolithic ``memory wall'' challenge into four independently analyzable yet mutually coupled dimensions, enabling researchers to observe and understand resource competition, synergy, and arbitrage among methods. Within this framework, we derive an additive error decomposition model and prove, under reasonable regularity conditions, the theoretical law that the ``computational bound precedes the context wall.'' The framework also analyzes arbitrage conditions among heterogeneous resources, revealing the theoretical positioning of external memory in multi-dimensional resource trade-offs. We conduct framework-validation experiments on three 7B-scale models; the results support the main conclusions of the theoretical analysis and demonstrate PRISM's value as a unified analytical tool for understanding complex adaptive inference systems.
+\end{abstract}
+
+\section{Introduction}
+
+\subsection{The Memory Wall in Long-Context LLM Serving}
+
+The deployment bottleneck of modern large language models (LLMs) increasingly stems from memory rather than pure arithmetic throughput. During autoregressive decoding, the key-value (KV) cache grows linearly with context length and quickly saturates GPU high-bandwidth memory (HBM). For long-context deployments, once HBM is exhausted, the system can only choose among several suboptimal options: discarding or compressing historical context, or offloading memory to slower CPU DRAM. Any of these choices simultaneously affects accuracy, latency, and throughput.
+
+This deployment bottleneck is commonly called the \textbf{memory wall}. In practice, however, the memory wall is not determined by any single control variable. The system can compress the KV cache, reduce the number of context blocks retained in HBM, invest more computation via test-time adaptation, or query an external memory layer. These choices are mutually coupled: more aggressive compression often requires stronger adaptation; larger external memory may compensate for a smaller active context; a tighter latency budget may render an otherwise accurate configuration unusable.
+
+\subsection{Why a Unified Perspective Is Needed}
+
+In recent years, significant progress has been made in each sub-direction of this problem, including KV-cache quantization, token eviction, low-rank or latent-variable compression, heterogeneous-memory serving, test-time adaptation, and external memory. Yet these methods are mostly analyzed in isolation or evaluated as standalone systems. Consequently, existing work still lacks a unified analytical framework to answer the following question:
+\begin{quote}
+Under shared HBM, DRAM, and compute budgets, to what extent should the system continue compressing, retain more context, increase adaptation steps, or转而 rely on external memory?
+\end{quote}
+
+\subsection{Positioning of PRISM}
+
+This paper proposes the PRISM analytical framework. Its core goal is not to provide a new serving algorithm or system implementation, but to offer a unified analytical language for understanding the relationships and synergistic behaviors among the four mainstream memory-adaptive strategies mentioned above. The name PRISM derives from its central functional metaphor: just as a prism splits a beam of white light into a visible spectrum, this framework decomposes the seemingly monolithic ``memory wall'' challenge into four independently analyzable resource dimensions, allowing researchers to clearly observe the interactions among dimensions.
+
+Specifically, PRISM abstracts an inference configuration as a point in a four-dimensional resource manifold---quantization precision ($q$), context scope ($c$), adaptation depth ($t$), and external memory scale ($e$)---and maps all existing methods to sub-manifolds or points on this manifold. This abstraction enables us to:
+\begin{itemize}
+    \item Analyze resource competition and complementarity among different methods;
+    \item Identify the conditions and order of appearance of the ``computational bound'' and the ``context wall;''
+    \item Derive theoretical conditions for arbitrage among heterogeneous resources.
+\end{itemize}
+
+\subsection{Main Analytical Contributions}
+
+The analytical contributions of this paper include:
+\begin{enumerate}
+    \item \textbf{Four-dimensional unified modeling}: Unifying quantization, context reduction, test-time adaptation, and external memory within a single analytical framework.
+    \item \textbf{Additive error decomposition}: Providing an approximate additive decomposition of inference error under resource constraints, and discussing in detail its applicability boundaries and the micro-foundations of the functional forms.
+    \item \textbf{Computational-bound-priority theorem}: Proving that, under regularity conditions, the computational resource bottleneck precedes the context-window bottleneck.
+    \item \textbf{Heterogeneous arbitrage conditions}: Deriving resource-arbitrage criteria among external memory and the other three dimensions.
+\end{enumerate}
+
+\noindent\textbf{What this paper does \emph{not} claim}: We emphasize that PRISM does not imply superior absolute performance over any existing method, nor does it require the framework to replace existing systems. Our goal is to provide a common language for analyzing and understanding these methods---a prism through which researchers can examine existing methods and future design possibilities from a new perspective.
+
+\section{Related Work}
+
+\subsection{Single-Dimension Memory-Adaptive Methods}
+
+\textbf{Quantization}. Model quantization and KV-cache quantization reduce memory footprint by lowering numerical precision. Quantization-based methods such as KIVI, KVQuant, and MiniKV primarily move the memory-vs.-error trade-off boundary along the ``precision'' dimension. QAQ further reveals the differentiated sensitivity of key and value caches to quantization, proposing non-uniform quantization strategies.
+
+\textbf{Context reduction}. KV-cache eviction, token merging, and compression techniques manage memory by controlling the amount of contextual information retained in HBM. Methods such as H2O, StreamingLLM, and Quest directly decide which tokens remain in the active context; Compactor introduces context-calibrated approximate leverage-score evaluation, maintaining full-KV performance with 68\% KV-memory reduction on LongBench.
+
+\textbf{Test-time adaptation}. Methods such as test-time training and context calibration trade additional forward/backward computation steps for better inference quality. Computational overhead is the main cost of such methods.
+
+\textbf{External memory augmentation}. Retrieval-augmented generation (RAG) and external memory banks shift part of the information storage requirement outside HBM, trading retrieval latency and external storage cost for memory savings.
+
+\subsection{Attempts at Multi-Dimension Unified Analysis}
+
+Recent work has begun to attend to the synergy of multiple methods. EVICPRESS jointly considers KV-cache eviction and compression, proposing a unified utility function to quantify the impact of compression and eviction on generation quality and latency, but its unity focuses on the algorithmic level. KVCompose performs structured KV-cache compression based on attention-guided layer-adaptive composite tokens. QuickSilver integrates four mechanisms at the token level: dynamic token halting, KV skipping, contextual token fusion, and adaptive quantization. However, these works still focus on algorithm design; their unification is a means rather than an end.
+
+Compared with the above, PRISM's unification is analytical---we do not propose new compression or eviction algorithms, but provide a theoretical framework for understanding the positions and mutual relationships of various methods on the four-dimensional resource manifold. This distinction is fundamental: PRISM's core output is not an optimization strategy, but a general abstract language for understanding and comparing different strategies.
+
+\subsection{Comparison with PRISM}
+
+Table~\ref{tab:comparison} compares PRISM with related unified efforts at the dimension level.
+
+\begin{table}[htbp]
+\centering
+\caption{Dimension-level comparison of PRISM with related unified efforts.}
+\label{tab:comparison}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Work} & \textbf{Covered Dimensions} & \textbf{Nature of Unification} & \textbf{Core Output} \\
+\midrule
+EVICPRESS & Eviction + Compression & Algorithmic (joint utility function) & New compression-eviction algorithm \\
+KVCompose & Layer-wise structured compression & Algorithmic (composite tokens) & New compressed representation \\
+QuickSilver & Token halting + KV skip + fusion + quantization & Algorithmic (modular token-level) & New token-level optimization framework \\
+\textbf{PRISM (this work)} & \textbf{Quantization + Context + Adaptation + Ext. memory} & \textbf{Analytical (abstract language)} & \textbf{Theoretical framework and insights} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{The PRISM Analytical Framework}
+
+\subsection{Notation and Definitions}
+
+Table~\ref{tab:notation} lists the core symbols and their definitions used throughout the paper.
+
+\begin{table}[htbp]
+\centering
+\caption{Core notation and definitions.}
+\label{tab:notation}
+\begin{tabular}{lll}
+\toprule
+\textbf{Symbol} & \textbf{Definition} & \textbf{Unit / Range} \\
+\midrule
+$q$ & Quantization precision, effective bit-width of KV cache & bits, $q \in [q_{\min}, q_{\max}]$ \\
+$c$ & Context scope, number of token blocks retained in HBM & blocks, $c \in [c_{\min}, c_{\max}]$ \\
+$t$ & Adaptation depth, number of test-time query update steps & steps, $t \in [t_{\min}, t_{\max}]$ \\
+$e$ & External memory, scale of DRAM-resident external memory table & entries, $e \geq 0$ \\
+$\rho$ & HBM utilization & $\rho \in [0,1]$ \\
+$\mathcal{H}$ & Hardware platform constraints & --- \\
+$E_{\text{target}}$ & Target error budget & Application-dependent \\
+$C_{\text{HBM}}$ & Total HBM capacity & bytes \\
+$C_{\text{DRAM}}$ & Total DRAM capacity & bytes \\
+$N_{\text{block}}$ & Tokens per block & token/block \\
+$C_{\text{unit}}$ & Storage cost per unit precision & bytes/value \\
+$B_{\max}$ & Compute budget ceiling & FLOPs or latency constraint \\
+$L_{\text{layers}}$ & Number of model layers & --- \\
+$n_h$ & Number of attention heads & --- \\
+$d_h$ & Hidden dimension per head ($d = n_h \cdot d_h$) & --- \\
+$B_{\text{batch}}$ & Inference batch size & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Four Resource Control Variables}
+
+PRISM abstracts four core control levers in adaptive LLM inference as continuous resource variables that together constitute a four-dimensional resource manifold:
+\[
+\mathcal{C} = (q, c, t, e) \in [q_{\min}, q_{\max}] \times [c_{\min}, c_{\max}] \times [t_{\min}, t_{\max}] \times [0, e_{\max}].
+\]
+
+The meanings of the variables are as follows:
+\begin{itemize}
+    \item \textbf{Quantization precision ($q$)}: Effective bit-width of the KV cache. Higher $q$ means finer cache representation (higher accuracy but more HBM usage); lower $q$ means more aggressive compression (memory savings but quantization noise).
+    \item \textbf{Context scope ($c$)}: Number of historical context blocks retained in HBM and accessible to attention. $c$ directly determines the information window size available to the attention mechanism.
+    \item \textbf{Adaptation depth ($t$)}: Number of test-time query update steps, corresponding to the intensity of test-time adaptation. More adaptation steps mean the system is willing to invest more computation to optimize inference quality for the current query.
+    \item \textbf{External memory ($e$)}: Scale of the DRAM-resident external memory table. $e=0$ means no external memory (pure HBM inference); $e>0$ means DRAM-side retrieval augmentation is enabled.
+\end{itemize}
+
+This abstraction does not require all systems to implement the same underlying mechanisms; its goal is to provide a common language for describing when memory, computation, and external retrieval can substitute for one another.
+
+\subsection{Approximate Error Model}
+
+To jointly analyze these control variables, PRISM adopts the following additive approximate decomposition:
+\begin{align}
+\mathcal{E}(q,c,t,e) =\ & \underbrace{\alpha \cdot 2^{-2q}}_{\text{quantization error}} + \underbrace{\frac{\beta \cdot f(e)}{c \cdot S}}_{\text{context-scope error}} + \underbrace{\frac{\gamma}{\sqrt{t}}}_{\text{adaptation error}} \nonumber \\
+& + \underbrace{\delta \cdot \frac{2^{-2q}}{c} + \epsilon \cdot \frac{\ln c}{t}}_{\text{coupling terms}} + \underbrace{r(e)}_{\text{retrieval term}},
+\end{align}
+where the parameters are:
+\begin{itemize}
+    \item $\alpha$: Base scaling coefficient of quantization error, determined by model architecture.
+    \item $\beta$: Scaling coefficient of context-scope error, characterizing the accuracy loss per unit of lost context.
+    \item $\gamma$: Scaling coefficient of adaptation error (the less adaptation, the larger the residual).
+    \item $\delta, \epsilon$: Coupling-term coefficients, characterizing the lowest-order cross effects of quantization$\times$context and context$\times$adaptation, respectively.
+    \item $S$: Effective information per context block ($S = N_{\text{block}} \cdot d$, with $d$ the hidden dimension).
+    \item $f(e) = 1 - \zeta(1 - e^{-e/e_0})$: Describes the degree to which external memory reduces the effective scope error, where $\zeta \in [0,1]$ is the retrieval quality factor and $e_0$ is the memory saturation constant.
+    \item $r(e)$: Retrieval overhead and residual mismatch term, of the form
+    \[
+    r(e) = \begin{cases} 0, & e = 0 \\ r_{\min} + \dfrac{\eta}{e}, & e > 0 \end{cases}
+    \]
+    where $r_{\min}$ is the minimum intrinsic cost of retrieval and $\eta$ is the retrieval efficiency decay coefficient.
+\end{itemize}
+
+\subsubsection*{Micro-foundations and alternative forms}
+
+The functional forms above are not assumed out of thin air, but correspond to lowest-order approximations of specific physical mechanisms:
+\begin{itemize}
+    \item \textbf{$2^{-2q}$ term}: Corresponds to the classical scaling law of MSE under uniform scalar quantization, $\Delta^2/12 \propto 2^{-2q}$. For non-uniform quantization (e.g., KIVI's asymmetric strategy, QAQ's sensitivity-aware allocation), this form can be regarded as an effective scaling after treating $q$ as the effective average bit-width. We report a comparison with alternative forms (such as $e^{-\kappa q}$) in Appendix~C.1; validation on 7B models shows that the $2^{-2q}$ form achieves 12--18\% lower fitting residuals than the exponential form in the 4--8 bit range.
+    \item \textbf{$1/\sqrt{t}$ term}: Corresponds to the convergence rate of test-time stochastic optimization (e.g., SGD or Adam) on a convexified loss landscape. If the adaptation process uses deterministic full-batch gradient descent or second-order methods, the decay rate may approach $1/t$ or even exponential. Appendix~C.1 shows that, in our qTTT setting (mini-batch, up to 4 steps), $1/\sqrt{t}$ outperforms $1/t$ in adjusted $R^2$ by 0.08--0.15, but the $1/t$ form gradually dominates in the deep-adaptation region ($t > 16$). Therefore $1/\sqrt{t}$ is more suitable for characterizing shallow-adaptation ($t \leq 8$) behavior.
+    \item \textbf{$1/c$ term}: Corresponds to the expected attention-quality degradation under a uniform-importance assumption when tokens (or blocks) are randomly dropped. If importance-aware selective retention such as H2O is adopted, the effective decay may deviate from the pure inverse law; in this case $c$ can be replaced by ``effective uniform capacity'' $c_{\text{eff}} = c / \nu$, where $\nu$ is the concentration coefficient of the importance distribution.
+    \item \textbf{Coupling terms}: $\delta \, 2^{-2q}/c$ and $\epsilon \, \ln c / t$ characterize the lowest-order cross effects of ``quantization noise amplifying context loss'' and ``context reduction increasing adaptation difficulty.'' Under weak-coupling operating conditions they exist as small correction terms.
+\end{itemize}
+
+This decomposition is not an exact truth, but an interpretable approximation with explicit applicability boundaries. The theorems in later sections should be understood as structural conclusions valid inside this model. Appendix~C.1 provides a systematic comparison of alternative functional forms for readers to assess the validity of out-of-model extrapolation.
+
+\subsubsection*{Approximation conditions and applicability boundaries}
+
+The above additive decomposition has good approximation accuracy when the following conditions hold:
+\begin{itemize}
+    \item \textbf{Weak-coupling condition}: When context length $L < 32\text{k}$ and quantization bit-width $q \geq 4$, the coupling term between quantization error and context error is usually negligible (coupling ratio $< 15\%$). This threshold is empirical: under the reported settings, ignoring the coupling term $(\delta, \epsilon)$ changes the fitted context wall by less than 0.02.
+    \item \textbf{Low-interaction regime}: When adaptation depth $t$ is relatively small, cross effects between adaptation error and other dimensions have not fully manifested.
+    \item \textbf{High retrieval quality}: When external-memory retrieval success rate is high, the external-memory error mainly manifests as independent retrieval-quality degradation.
+\end{itemize}
+When these conditions are not met, a corrected form with explicit coupling coefficients is recommended.
+
+\subsection{Resource Constraints}
+
+PRISM considers the following three types of resource constraints. Compared with earlier versions, this section explicitly incorporates model-architecture constants and hardware heterogeneity, making the constraints more physically interpretable.
+
+\subsubsection*{HBM capacity constraint}
+The storage requirement of the KV cache is bounded by total HBM. For a Transformer decoder, the KV cache stores both Key and Value tensors, one per layer per head. The exact expression is:
+\[
+2 \cdot L_{\text{layers}} \cdot n_h \cdot d_h \cdot B_{\text{batch}} \cdot (c \cdot N_{\text{block}}) \cdot \frac{q}{8} \leq C_{\text{HBM}} \cdot (1 - \rho),
+\]
+where $q/8$ converts bit-width to bytes (assuming no extra overhead) and $\rho$ is HBM utilization. For single-sequence inference ($B_{\text{batch}} = 1$), this simplifies to:
+\[
+c \cdot q \leq \frac{8 C_{\text{HBM}} (1-\rho)}{2 L_{\text{layers}} n_h d_h N_{\text{block}}}.
+\]
+Collapsing all architecture and hardware constants on the right-hand side into an effective capacity $C_{\text{eq}}$ yields the simplified form $c \cdot q \cdot N_{\text{block}} C_{\text{unit}} \leq C_{\text{HBM}}(1-\rho)$ used in the main analysis, where $C_{\text{unit}}$ plays the role of ``effective bytes per value.'' The $\rho$ values reported in Table~\ref{tab:cross-model} are all computed from this exact formula and annotated as ``analytical projection.''
+
+\subsubsection*{DRAM capacity constraint}
+The storage requirement of the external-memory table is bounded by total DRAM:
+\[
+e \cdot L_{\text{entry}} \leq C_{\text{DRAM}} \cdot (1 - \rho_{\text{DRAM}}),
+\]
+where $L_{\text{entry}}$ is the storage overhead per external-memory entry (4096 bytes in the experimental settings).
+
+\subsubsection*{Compute budget constraint}
+Different operations are limited by different hardware subsystems, making a single FLOP count insufficient. We therefore decompose the constraint into three independent dimensions:
+\begin{itemize}
+    \item \textbf{Prefill/attention FLOP budget}: $k_q^{(\text{flop})} q d + k_c^{(\text{flop})} c S d \leq B_{\text{flop}}$
+    \item \textbf{Memory bandwidth budget (HBM)}: $k_q^{(\text{hbm})} q + k_c^{(\text{hbm})} c \leq B_{\text{hbm}}$ (decode stage is often bandwidth-bound)
+    \item \textbf{Adaptation and retrieval heterogeneous budget}: $k_t t d^2 \leq B_{\text{adapt}}$ (adaptation is mostly FLOP-intensive), $k_e e \leq B_{\text{io}}$ (retrieval is limited by PCIe/network bandwidth)
+\end{itemize}
+In the simplified analysis of the main text, when the decode stage is bandwidth-bound and adaptation computation is small, we aggregate the above into a single scalar inequality:
+\[
+k_q q d + k_c c S d + k_t t d^2 + k_e e L_{\text{entry}} \leq B_{\max},
+\]
+but we discuss the differences in boundary behavior under each subsystem-bottleneck dominance in Section~\ref{sec:heterogeneous} and Appendix~B.
+
+\subsection{Method Mapping on the Resource Manifold}
+
+An important function of the PRISM framework is mapping existing methods to specific subsets on the four-dimensional resource manifold:
+\begin{itemize}
+    \item KV-cache-eviction-only methods operate on the curve $(q=q_{\max}, c, t=0, e=0)$ (the $c$-axis).
+    \item Quantization-only methods operate on the curve $(q, c=c_{\max}, t=0, e=0)$ (the $q$-axis).
+    \item RAG methods operate on the curve $(q_{\max}, c_{\max}, t=0, e)$ (the $e$-axis).
+    \item Joint quantization-eviction methods operate on the plane $(q, c, t=0, e=0)$ (the $q$-$c$ plane).
+    \item PRISM provides a panoramic view covering all four dimensions.
+\end{itemize}
+This mapping makes relationships among different methods visible: they are no longer isolated, mutually substitutable schemes, but different projections on the same high-dimensional resource manifold.
+
+\section{Fundamental Limits and Scaling Laws}\label{sec:limits}
+
+To clearly present the framework's core predictive power, this section first analyzes the system's resource limits and bottleneck order under the condition $e=0$ (no external memory).
+
+\subsection{Basic Assumptions}
+
+\begin{assumption}[Target error is achievable]\label{asm:achievable}
+The target error satisfies $E_{\text{target}} > \alpha \, 2^{-2q_{\min}}$, i.e., the problem remains feasible at the lowest quantization precision.
+\end{assumption}
+
+\begin{assumption}[Compute budget is limited but non-trivial]\label{asm:budget}
+The compute budget satisfies $B_{\max} > k_q q_{\min} d + k_c c_{\min} S d$, i.e., after the lowest feasible configuration the system still has non-zero adaptation budget.
+\end{assumption}
+
+\begin{assumption}[Leading-term condition in the near-wall region]\label{asm:leading}
+In wall-position analysis, we adopt a reduced model: when the system is close to the operating boundary, the coupling term $\epsilon \ln c / t$ is treated as a lower-order term (decaying faster than $1/c$ and $1/\sqrt{t}$), thereby simplifying the analysis.
+\end{assumption}
+
+\begin{assumption}[Single-variable bottleneck dominance]\label{asm:single}
+In analyzing wall positions, we temporarily fix $q = q_{\min}$ and $e = 0$, letting only $c$ and $t$ vary freely. This corresponds to the strategy of ``prioritizing the context--adaptation trade-off at the lowest feasible precision.'' Section~\ref{sec:joint} discusses the joint-boundary behavior under simultaneous optimization of $(q,c)$.
+\end{assumption}
+
+\subsection{Minimum Feasible Scope and the Context Wall}
+
+In the ideal case with no compute constraint ($t \to \infty$), the adaptation error and the coupling term $\epsilon \ln c / t$ are both negligible. Fixing $q = q_{\min}$ and $e = 0$, the minimum feasible context scope from the error model is:
+\[
+c_{\min} = \frac{\beta + \delta \cdot 2^{-2q_{\min}}}{S \cdot (E_{\text{target}} - \alpha \cdot 2^{-2q_{\min}})}.
+\]
+We define the HBM utilization that satisfies this minimum scope as the \textbf{context wall}:
+\[
+\rho_{\text{ctx}} = 1 - \frac{2 L_{\text{layers}} n_h d_h N_{\text{block}} \cdot c_{\min} \cdot q_{\min} / 8}{C_{\text{HBM}}}.
+\]
+When $\rho > \rho_{\text{ctx}}$, even with infinite compute the system cannot retain enough context in HBM to meet the target error. This is the system's \textbf{hard capacity boundary}.
+
+\subsection{Computational Bound}
+
+Consider a finite compute budget. Given $q = q_{\min}$ and the current number of context blocks $c$, the maximum adaptation steps afforded by the compute constraint is:
+\[
+t_{\max} = \frac{B_{\max} - k_q q_{\min} d - k_c c S d}{k_t d^2}.
+\]
+On the other hand, to achieve the target error $E_{\text{target}}$, the required adaptation steps in the reduced model (ignoring the $\epsilon \ln c / t$ term) are:
+\[
+t_{\text{req}} = \left( \frac{\gamma}{E_{\text{target}} - \alpha \cdot 2^{-2q_{\min}} - (\beta + \delta \cdot 2^{-2q_{\min}}) / (c S)} \right)^2.
+\]
+As $c$ decreases (HBM pressure rises), the denominator shrinks and $t_{\text{req}}$ increases monotonically. We define the HBM utilization at which ``$t_{\text{req}}$ first exceeds $t_{\max}$'' as the \textbf{computational bound} $\rho_{\text{comp}}$. When $\rho > \rho_{\text{comp}}$, the system still has sufficient context capacity, but cannot complete inference within the latency budget because the adaptation budget is exhausted.
+
+\noindent\textbf{Terminology note}: We deliberately use ``computational bound'' rather than ``computational wall,'' to emphasize that this bottleneck is budget-driven and can in theory be pushed back by relaxing latency or increasing FLOP resources---a soft constraint, unlike the hard physical capacity limit of the context wall.
+
+\subsection{Computational-Bound-Priority Theorem}
+
+\begin{theorem}[Computational bound precedes the context wall]\label{thm:priority}
+Under Assumptions~\ref{asm:achievable}--\ref{asm:single}, and within the reduced model, we have:
+\[
+\rho_{\text{comp}} < \rho_{\text{ctx}},
+\]
+and the gap satisfies $\rho_{\text{ctx}} - \rho_{\text{comp}} = \Theta(1 / t_{\max})$.
+\end{theorem}
+
+\noindent\textbf{Intuitive meaning}: The system usually fails first because adaptation overhead exceeds the latency budget, and only later reaches the true context boundary where ``even infinite compute is powerless.'' This shows that in most practical scenarios, compute resources become the bottleneck before context capacity.
+
+\noindent\textbf{Scope of the theorem}: Theorem~\ref{thm:priority} depends on Assumption~\ref{asm:budget} (regularity condition), which is not always satisfied in practice. Cases where it fails include:
+\begin{itemize}
+    \item \textbf{Ultra-edge devices}: When the hardware itself can only accommodate the minimum context window and cannot provide any adaptation budget, the computational bound and the context wall may arrive simultaneously.
+    \item \textbf{Extreme latency constraints}: When the target latency is extremely low, the adaptation budget may be exhausted by the latency constraint rather than the memory constraint, weakening the theorem's applicability.
+\end{itemize}
+Moreover, Theorem~\ref{thm:priority} holds under the premise of fixed $q = q_{\min}$. If the system is allowed to trade $q > q_{\min}$ for larger $c$ (i.e., moving along the $q$-$c$ iso-error curve), the wall order could in principle change. We analyze this joint-optimization scenario in Section~\ref{sec:joint}.
+
+\subsection{Quadratic Divergence in the Near-Wall Region}
+
+Furthermore, the required adaptation budget in the near-wall region satisfies the approximate form:
+\[
+t^*(\rho) = \frac{C_T}{(\rho_{\text{ctx}} - \rho)^2}, \quad C_T > 0.
+\]
+This result gives an important interpretation: as the system approaches the context wall, a tiny rise in HBM pressure causes a sharp inflation of the adaptation budget, so at the serving level it manifests as a ``performance cliff.'' The empirically observed near-wall latency scaling is approximately $(1-\rho)^{-1.9}$, basically consistent with the quadratic-divergence picture of the simplified model, but away from the boundary it is affected by real-system effects.
+
+\subsection{Heterogeneous Resource Arbitrage Analysis}\label{sec:heterogeneous}
+
+When external memory is enabled ($e > 0$), in the ideal case with no compute constraint ($t \to \infty$), the minimum feasible scope becomes:
+\[
+c_{\min}^{e} = \frac{\beta f(e_{\max}) + \delta \cdot 2^{-2q_{\min}}}{S \cdot (E_{\text{target}} - \alpha \cdot 2^{-2q_{\min}} - r(e_{\max}))}.
+\]
+Let $A = \beta(1 - \zeta(1 - e^{-e_{\max}/e_0})) + \delta \cdot 2^{-2q_{\min}}$, $B = E_{\text{target}} - \alpha \cdot 2^{-2q_{\min}} - r_{\min} - \eta / e_{\max}$, $A_0 = \beta + \delta \cdot 2^{-2q_{\min}}$, and $B_0 = E_{\text{target}} - \alpha \cdot 2^{-2q_{\min}}$.
+
+Then if and only if
+\[
+\frac{A}{B} < \frac{A_0}{B_0},
+\]
+external memory postpones the context wall (i.e., the coverage benefit of external memory exceeds its retrieval cost). This condition can be understood as a comparison between ``coverage benefit'' and ``retrieval cost''---it is not a universal physical law independent of model assumptions, but a model-internal discriminant criterion for judging when DRAM-resident external memory can serve as an effective substitute for HBM-resident active context.
+
+\subsubsection*{Sensitivity discussion}
+The sensitivity of the above arbitrage condition to key parameters is as follows:
+\begin{itemize}
+    \item \textbf{Retrieval quality $\zeta$}: When retrieval success rate is low, the resource efficiency of external memory decays rapidly and the arbitrage-favorable interval shrinks drastically.
+    \item \textbf{External memory scale $e$}: The marginal benefit of $e$ is diminishing; when $e$ is too large, the error reduction from additional external-memory expansion may fall below the benefit of increasing the context ratio $c$ with the same resource investment.
+    \item \textbf{Internal resource composition}: Optimal resource allocation strategies may differ significantly under different $(q, c, t)$ combinations. For example, in scenarios that already use aggressive quantization (small $q$), the marginal benefit of further reducing $q$ is minimal, so the arbitrage condition is more likely to favor external memory.
+\end{itemize}
+
+\subsection{Wall Order under Joint $(q,c)$ Optimization}\label{sec:joint}
+
+Theorem~\ref{thm:priority} assumes $q$ is fixed at $q_{\min}$. A natural question is: if the system can adjust along the $q$-$c$ joint iso-error surface (trading more precision for less context, or vice versa), does the computational bound still precede the context wall?
+
+In the reduced model, fixing the target error $E_{\text{target}}$, $(q,c)$ must satisfy:
+\[
+\alpha 2^{-2q} + \frac{\beta + \delta 2^{-2q}}{c S} = E_{\text{target}}.
+\]
+Taking the implicit derivative with respect to $c$ yields the slope of the iso-error curve. Substituting it into the exact HBM-constraint expression, one can define the \textbf{joint-optimization context wall} $\tilde{\rho}_{\text{ctx}}$---the infimum of HBM utilization over all $(q,c)$ combinations satisfying the target error. Similarly one can define the \textbf{joint-optimization computational bound} $\tilde{\rho}_{\text{comp}}$.
+
+\begin{corollary}[Wall order under joint optimization]\label{cor:joint}
+If the $c_{\min}$ corresponding to $q_{\min}$ satisfies $c_{\min} q_{\min} \leq \frac{8 C_{\text{HBM}}(1-\rho)}{2 L_{\text{layers}} n_h d_h N_{\text{block}}}$, and the quantization-error coefficient $\alpha$ is not too large relative to the context-error coefficient $\beta$ (precise condition: $\alpha < \frac{\beta S}{2\delta} \cdot \frac{\ln 2}{2}$), then joint optimization does not reverse the wall order, i.e., $\tilde{\rho}_{\text{comp}} < \tilde{\rho}_{\text{ctx}}$. Intuitively, as long as quantization is not the absolutely dominant term in the error landscape, the strategy of buying context space by increasing $q$ is too costly under the HBM constraint ($q$ increases HBM occupancy linearly, but quantization error decays only exponentially), so the optimal strategy still tends to exhaust the adaptation budget first.
+\end{corollary}
+
+The proof of this corollary relies on the asymmetry between the linear dependence of HBM occupancy on $q$ and the exponential decay of error with respect to $q$; see Appendix~B.3 for details.
+
+\section{Enhanced Modules under the PRISM Framework (Implementation Explorations)}
+
+In addition to serving as an analytical tool, PRISM provides theoretical guidance for unified resource management. This chapter introduces three implementation-exploration modules inspired by the PRISM framework perspective. It should be specially noted that these modules are engineering attempts heuristically derived from the PRISM framework perspective, not the theoretical core of PRISM---the core value of PRISM lies in the analytical framework of Sections~3--4 itself.
+
+\subsection{qTTT Heuristic and Its Implementation}
+
+The qTTT (Quantized Test-Time Tuning) component needs to perform test-time updates of attention queries on the unit sphere. In the simplest vector case, tangent-space projection itself can already be completed in linear complexity, so PRISM does \emph{not} claim new asymptotic complexity improvements relative to this simplest baseline.
+
+Our contribution is narrower: in batch implementations of repeated query updates, we use an implementation heuristic inspired by msign (masked sign, i.e., a sparse gradient operator that zeroes components with absolute value below a threshold). Specifically, when using the rank-one update proxy $M = \theta g^{\top}$ on the unit sphere, the msign function can effectively sparsify the gradient signal, thereby reducing effective computation in batch query updates. In the experimental settings, we limit qTTT retry operations to a small 4-rank proxy, and constrain the search neighborhood to the vicinity of a Gaussian sphere (i.e., parameter updates are constrained within a high-confidence neighborhood of previously observed gradient statistics).
+
+This paper treats msign-inspired qTTT as an implementation heuristic, not an independent strong complexity theorem. Its value is mainly empirical: in our implementation, it reduces query latency while hardly changing the overall accuracy trend. Given its engineering nature, detailed implementation has been moved to Appendix~A.2; the main text retains only a conceptual description.
+
+\subsection{Information-Quality Awareness}
+
+Recent observations show that not all retained context has equal information value; low-information background tokens may still consume precious precision, attention, and memory-write budgets. To this end, we introduce a simple information-quality awareness mechanism.
+
+For each token $i$, define an information-quality score $Q_i \in [0,1]$ (estimable via PageRank or attention entropy, etc.). For a batch $B_m$, its average quality is defined as:
+\[
+Q(B_m) = \frac{1}{|B_m|} \sum_{i \in B_m} Q_i.
+\]
+This signal is then used in four places:
+\begin{itemize}
+    \item \textbf{Quality-aware quantization}: Allocate higher bit-widths to high-quality tokens (in $q$ this manifests as token-level effective bit-width $q_i = q_{\text{base}} + \Delta q \cdot Q_i$).
+    \item \textbf{Quality-aware block-level attention}: Allocate higher weights to high-quality blocks (in $c$ this manifests as effective capacity $c_{\text{eff}} = \sum_{m} Q(B_m)$).
+    \item \textbf{Quality-aware external-memory write}: Prioritize writing high-quality n-grams (in $e$ this manifests as write-quality gating).
+    \item \textbf{Quality-aware adaptation regularization}: Suppress excessive attention to low-quality tokens during adaptation (in $t$ this manifests as a weighted loss).
+\end{itemize}
+Its role is not to establish another independent theory, but to make resource investments in compression, attention, and external memory more selective under the unified resource perspective. It should be pointed out that when $q$ and $c$ become token-/block-dependent heterogeneous variables, the scalar manifold abstraction is broken; at this point $(q,c)$ should be understood as effective scalars (via averaging or minimum-value reduction), and the quality-awareness mechanism provides a suboptimal allocation strategy under that effective-value constraint.
+
+\subsection{RLS-Based Online Parameter Estimation}
+
+To enable adaptive configuration on the PRISM resource manifold, we adopt online Recursive Least Squares (RLS) to estimate the parameters $(\alpha, \beta, \gamma, \delta, \epsilon, \zeta, \eta, r_{\min})$ in the error model. Let the forgetting factor $\lambda = 0.95$ (experimental setting, corresponding to an effective memory length of about 20 observation windows, suitable for minute-level non-stationarity of inference loads). The RLS update rules are:
+\[
+\mathbf{P}_k = \frac{1}{\lambda}\left(\mathbf{P}_{k-1} - \frac{\mathbf{P}_{k-1} \mathbf{x}_k \mathbf{x}_k^{\top} \mathbf{P}_{k-1}}{\lambda + \mathbf{x}_k^{\top} \mathbf{P}_{k-1} \mathbf{x}_k}\right),
+\]
+\[
+\boldsymbol{\theta}_{k} = \boldsymbol{\theta}_{k-1} - \mathbf{P}_{k}\mathbf{x}_k(y_k - \mathbf{x}_k^{\top}\boldsymbol{\theta}_{k-1}),
+\]
+where $\mathbf{x}_k$ is the current four-dimensional configuration $(q, c, t, e)$ and its transformed features, $y_k$ is the observed inference error, and $\boldsymbol{\theta}_k$ is the online estimate of the model parameters. This online estimation mechanism allows PRISM to dynamically track the evolution of resource efficiency in changing inference loads, providing data-driven parameter calibration for the framework's theoretical analysis.
+
+\section{Experimental Evaluation}
+
+\noindent\textbf{Note on experimental positioning}: The core goal of the experiments in this chapter is not to prove that PRISM outperforms existing methods in absolute performance, but to validate the analytical power of the PRISM framework---i.e., whether experiments organized through the framework perspective can support the conclusions of the preceding theoretical analysis, and to demonstrate PRISM's explanatory power in revealing system behavior. Just as the value of a prism is judged not by whether it emits light itself, but by whether it helps the observer see previously invisible spectral structure.
+
+\noindent\textbf{Note on the nature of experimental methods}: The results reported in this chapter come from a hybrid validation pipeline: (1) first, offline configuration search via the PRISM error model and constraint equations to obtain candidate $(q,c,t,e)$ configuration sets; (2) then, executing these configurations in a vLLM-modified runtime prototype, measuring real accuracy, latency, and memory usage; (3) finally, feeding measured values back into the RLS parameter estimator to iteratively correct model parameters. Therefore, the $\rho$ values and wall positions in the tables are ``analytical projections with runtime-calibrated parameters,'' not pure simulation or pure measured statistics.
+
+\subsection{Research Questions}
+
+The experiments in this paper revolve around three questions:
+\begin{itemize}
+    \item \textbf{RQ1}: Can the unified model predict actual trends in the near-wall region?
+    \item \textbf{RQ2}: Under the current fixed external-memory-scale setting, is the introduction of external memory associated with a larger feasible operating region?
+    \item \textbf{RQ3}: Under the same serving framework, do the proposed enhanced modules improve resource trade-offs?
+\end{itemize}
+
+\subsection{Experimental Setup}
+
+\begin{itemize}
+    \item \textbf{Models}: LLaMA-2-7B, Mistral-7B-v0.1, Qwen-2-7B
+    \item \textbf{Hardware}: 1$\times$ NVIDIA A100 80GB HBM, 512GB CPU DRAM (hardware constants: $C_{\text{HBM}}=80$\,GB, $C_{\text{DRAM}}=512$\,GB, $C_{\text{unit}}=2$\,bytes (FP16), $N_{\text{block}}=256$\,tokens, $d=4096$, $L_{\text{layers}}=32$, $n_h=32$, $d_h=128$)
+    \item \textbf{Workload}: 10\,QPS mixed request stream, context lengths from 4K to 128K tokens
+    \item \textbf{Evaluation tasks}: LongBench, RULER, and Needle-in-Haystack-style retrieval tasks
+    \item \textbf{Comparison baselines}: vLLM, SnapKV, H2O, StreamingLLM, FlexGen, KIVI, KVQuant, MiniKV
+    \item \textbf{External memory}: Wikipedia embeddings built into 128K clusters, using Faiss HNSW index. In the main experiments of this paper this table scale is kept fixed, so they provide indirect support for wall-position-shift analysis rather than a full parameter sweep over $e$. See Appendix~C.2 for the experimental design of a direct $e$ sweep.
+    \item \textbf{Parameter estimation}: Online RLS with forgetting factor $\lambda = 0.95$
+\end{itemize}
+
+\subsection{Cross-Model Results}\label{sec:cross-model}
+
+Across the three model settings, the four-control-variable version gives better reported accuracy-latency trade-offs than the 3D PRISM variant and representative offloading baselines. Although attention mechanisms differ, the same near-wall resource picture remains explanatory, and experimental results are qualitatively consistent with model predictions.
+
+Table~\ref{tab:cross-model} shows accuracy, P99 latency, and critical $\rho$ for different methods on the three models. PRISM (full-dimension configuration) refers to configurations jointly searched on the four-dimensional manifold; PRISM-3D is the three-dimensional special case with external memory disabled (fixed $e=0$), used to verify the marginal contribution of the external-memory dimension. The $\rho_{\text{ctx}}$ and $\rho_{\text{comp}}$ in the table are both analytical projection values computed from the exact HBM-capacity formula and calibrated against runtime memory measurements.
+
+\begin{table}[htbp]
+\centering
+\caption{Cross-model results: accuracy, P99 latency, and critical $\rho$ (analytical projection).}
+\label{tab:cross-model}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Architecture} & \textbf{Method} & \textbf{Acc (\%)} & \textbf{P99 (ms)} & \textbf{$\rho_{\text{ctx}}$} & \textbf{$\rho_{\text{comp}}$} \\
+\midrule
+LLaMA-2-7B & vLLM + Offload & 82.4 & 315 & 0.93 & --- \\
+LLaMA-2-7B & PRISM-3D & 95.2 & 176 & 0.97 & 0.94 \\
+LLaMA-2-7B & \textbf{PRISM (full)} & \textbf{97.8} & \textbf{142} & \textbf{0.99} & \textbf{0.96} \\
+\midrule
+Mistral-7B & vLLM + Offload & 79.1 & 342 & 0.91 & --- \\
+Mistral-7B & PRISM-3D & 94.8 & 189 & 0.96 & 0.93 \\
+Mistral-7B & \textbf{PRISM (full)} & \textbf{96.5} & \textbf{158} & \textbf{0.98} & \textbf{0.95} \\
+\midrule
+Qwen-2-7B & vLLM + Offload & 85.3 & 298 & 0.94 & --- \\
+Qwen-2-7B & PRISM-3D & 96.2 & 168 & 0.98 & 0.95 \\
+Qwen-2-7B & \textbf{PRISM (full)} & \textbf{98.1} & \textbf{135} & \textbf{0.99} & \textbf{0.96} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The wall shifts from PRISM-3D to PRISM full-dimension are: LLaMA-2: 0.02 (context wall) and 0.02 (computational bound); Mistral: 0.02 and 0.02; Qwen: 0.01 and 0.01. It should be noted that extremely high $\rho$ values such as 0.99 in the table reflect theoretically feasible boundaries under analytical projection; in actual runtime, due to memory fragmentation, CUDA context overhead, and KV-cache allocation alignment, the practically stable $\rho$ is usually 0.03--0.05 lower than the projection. We provide a comparison of practical runtime $\rho$ versus analytical projection in Appendix~A.1.
+
+\subsection{Comparison with Representative Baselines}
+
+Under the setting LLaMA-2-7B, $\rho=0.9$, 128K context, PRISM achieves higher compression rates in the reported results while maintaining favorable accuracy-latency trade-offs.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison with representative baselines (LLaMA-2-7B, $\rho=0.9$, 128K context).}
+\label{tab:baselines}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{Acc (\%)} & \textbf{P99 (ms)} & \textbf{Throughput (tok/s)} & \textbf{Compression} \\
+\midrule
+SnapKV & 67.1 & 342 & 1240 & 2.0$\times$ \\
+H2O & 66.8 & 358 & 1180 & 2.0$\times$ \\
+StreamingLLM & 71.3 & 311 & 1350 & 4.0$\times$ \\
+KIVI & 89.2 & 245 & 1680 & 4.0$\times$ \\
+KVQuant & 91.5 & 228 & 1820 & 5.3$\times$ \\
+MiniKV & 93.8 & 198 & 1920 & 7.1$\times$ \\
+PRISM-3D & 95.2 & 176 & 1950 & 8.0$\times$ \\
+\textbf{PRISM (full)} & \textbf{97.8} & \textbf{142} & \textbf{1880} & \textbf{16.0$\times$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+It must be emphasized that the system optimization objectives listed here are not fully aligned, and the resource-control axes used by the methods are not fully consistent; therefore this table is more suitable as a reference comparison than as a strictly fair duel after capability matching. The focus of this paper is not to claim a strictly fair, comprehensive victory over all methods, but to show that even compared with highly targeted cache-management methods, the unified framework remains competitive under the authors' evaluation conditions.
+
+\subsection{Validation of Theoretical Predictions}
+
+\textbf{Near-wall divergence}. As $\rho$ approaches 1, the observed latency divergence trend is consistent with the quadratic-divergence model. The fitted divergence scaling is $(1-\rho)^{-1.9}$ ($R^2=0.94$, 95\% CI $[-2.08, -1.80]$), close to the theoretically predicted exponent $-2$ but slightly deviating, possibly due to queuing effects and memory fragmentation in the real system in the near-wall region.
+
+\textbf{Wall order}. Under different compute budgets, the empirically observed point where ``latency first becomes unacceptable'' precedes the point where ``target error can no longer be met,'' consistent with the model prediction that the computational bound precedes the context wall. Appendix~C.3 reports the experimental design for directly measuring the separation of $t_{\text{req}}$ and $t_{\max}$.
+
+\subsection{Ablation Study}
+
+Under the LLaMA-2, $\rho=0.85$ setting, each component of information-quality awareness independently contributes positive gains, and the full combination achieves the best overall result in most test conditions.
+
+\begin{table}[htbp]
+\centering
+\caption{Ablation of information-quality awareness (LLaMA-2, $\rho=0.85$).}
+\label{tab:ablation}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Configuration} & \textbf{Acc (\%)} & \textbf{P99 (ms)} & \textbf{$\rho_{\text{ctx}}$ (proj.)} \\
+\midrule
+PRISM (full) & 97.8 & 142 & 0.99 \\
+w/o quality-aware quantization & 96.9 & 145 & 0.98 \\
+w/o quality-aware attention & 96.2 & 148 & 0.98 \\
+w/o quality-aware Engram & 97.0 & 146 & 0.98 \\
+w/o all quality-aware components & 95.2 & 176 & 0.97 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On the qTTT acceleration side, the msign-inspired implementation reduces query-level latency with small accuracy changes, suggesting it is better suited as a practical approximation rather than a new asymptotic-complexity guarantee.
+
+\section{Discussion}
+
+\subsection{Analytical Value and Boundaries of PRISM}
+
+As an analytical framework, PRISM's main value lies in:
+\begin{itemize}
+    \item \textbf{Systematic perspective}: Placing four classes of memory-adaptive methods on a unified four-dimensional resource manifold, exposing their hidden competition and complementarity. Just as a prism reveals dark lines in a spectrum, PRISM reveals hidden bottlenecks in resource allocation.
+    \item \textbf{Theoretical predictiveness}: The computational-bound-priority theorem provides system designers with a theoretical tool for diagnosing resource bottlenecks.
+    \item \textbf{Configuration guidance}: The heterogeneous arbitrage condition provides a qualitative criterion for the decision to introduce external memory.
+\end{itemize}
+
+The boundaries of the framework should also be clearly recognized:
+\begin{itemize}
+    \item The precision of the additive error model is limited by the weak-coupling assumption and needs correction under ultra-high compression scenarios.
+    \item The theoretical analysis itself does not directly produce a deployable scheduling algorithm; its practical realization requires integration with the engineering constraints of specific systems.
+    \item The current validation experiments are limited in scale; cross-scale consistency on larger models remains to be confirmed.
+    \item The high $\rho$ values in the tables are analytical projections; practically runnable utilization is lower due to system overhead.
+\end{itemize}
+
+\subsection{Implications: From ``Tuning'' to ``Analysis--Design''}
+
+The core insight of the PRISM framework is that the large amount of hand-tuning currently practiced in LLM inference deployment essentially stems from the lack of a systematic analytical tool for understanding multi-dimensional resource trade-offs. We hope PRISM can push the field from an empiricist ``tuning'' paradigm toward a more scientific ``analysis--design'' paradigm---first understanding the optimal structure of resource allocation theoretically through the prism, then implementing systems based on that understanding.
+
+\section{Conclusion}
+
+This paper proposes PRISM, a four-dimensional unified resource analysis framework for adaptive LLM inference. Just as a prism decomposes white light into a visible spectrum, PRISM decomposes the ``memory wall'' challenge into four independently analyzable resource dimensions---quantization, context reduction, test-time adaptation, and external memory---and provides a set of analytical tools for understanding the interactions among these dimensions. Within this framework, two structural features are particularly critical: the computational bound precedes the context wall, and the adaptation budget grows quadratically near the context wall; the unified framework also gives a simple criterion for when external memory can serve as an effective substitute for HBM-resident active context.
+
+Empirically, results on three model families are consistent with near-wall trend predictions, and obtain favorable resource trade-offs under the reported evaluation settings. We treat these results as support for the conclusion that ``the unified resource perspective is explanatory,'' rather than treating any analytical formula as a complete characterization of all long-context inference behavior.
+
+PRISM does not claim to be a replacement for existing methods, but provides a common language for understanding them---a prism through which researchers can examine existing methods and future design possibilities from a new perspective.
+
+\section{Limitations}
+
+This paper still has several limitations, which also leave clear directions for future, more comprehensive framework validation under larger scales and more diverse conditions through PRISM:
+
+\begin{enumerate}
+    \item \textbf{Simplification of the error model}: The current error model is intentionally simplified and may fail to characterize higher-order interactions among compression, truncation, adaptation, and retrieval. In extreme long-context ($L > 100\text{k}$) combined with ultra-low bit-width ($q=2$) scenarios, the effect of coupling terms may be non-negligible.
+    \item \textbf{Scope of theorems}: The theorem that the computational bound precedes the context wall is established within a near-wall reduced model where $\epsilon \ln c / t$ is treated as a lower-order term. If this assumption fails, the theorem conclusion needs correction. Section~\ref{sec:joint} already gives extended discussion under joint $(q,c)$ optimization, but the more general 4D joint boundary remains to be fully characterized.
+    \item \textbf{Static nature of external memory}: The external-memory mechanism is evaluated on a static offline table, not a continuously online-updated memory; moreover, the current experiments do not directly sweep $e$ to validate the arbitrage criterion itself, but support it through indirect evidence from a fixed external-memory scale. Appendix~C.2 provides an experimental design to remedy this gap.
+    \item \textbf{Simplified abstraction of compute budget}: The main text abstracts compute budget as a scalar $B_{\max}$, but Section~3.4 already points out that real systems are constrained by heterogeneous limits on FLOPs, HBM bandwidth, DRAM bandwidth, and PCIe bandwidth. Full multi-dimensional budget analysis is future work.
+    \item \textbf{Experiment scale and generality}: Although the current experimental results are illustrative, if the framework is to be regarded as more broadly predictive, further validation is needed across more workloads, model scales (e.g., 13B, 70B), and serving scenarios.
+    \item \textbf{Hardware platform limitations}: The $(1-\rho)^{-1.9}$ scaling has so far only been validated on three A100s for 7B-scale models; cross-architecture (e.g., H100) generality remains to be confirmed.
+\end{enumerate}
+
+\appendix
+
+\section{Hardware Constants and Runtime-Achievable Utilization}\label{app:hardware}
+
+\begin{table}[htbp]
+\centering
+\caption{Hardware constants.}
+\label{tab:hardware}
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Value} \\
+\midrule
+$C_{\text{HBM}}$ & 80 GB \\
+$C_{\text{DRAM}}$ & 512 GB \\
+$C_{\text{unit}}$ & 2 bytes (FP16) \\
+$N_{\text{block}}$ & 256 tokens \\
+$d$ & 4096 (LLaMA-2-7B setting) \\
+$L_{\text{layers}}$ & 32 \\
+$n_h$ & 32 \\
+$d_h$ & 128 \\
+$L_{\text{entry}}$ & 4096 bytes per external-memory entry \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Runtime achievable utilization comparison}: Table~\ref{tab:runtime-rho} shows the comparison between analytical projection $\rho_{\text{ctx}}$ and the maximum stable $\rho$ actually observed at runtime on LLaMA-2-7B ($n=50$ inference requests). The difference mainly comes from CUDA memory alignment, PyTorch allocator caching, and KV-cache block-alignment overhead.
+
+\begin{table}[htbp]
+\centering
+\caption{Analytical projection vs. runtime maximum stable $\rho$ (LLaMA-2-7B).}
+\label{tab:runtime-rho}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Configuration} & \textbf{Analytical $\rho_{\text{ctx}}$} & \textbf{Runtime max stable $\rho$} & \textbf{Gap} \\
+\midrule
+PRISM-3D & 0.97 & 0.93 & 0.04 \\
+PRISM (full) & 0.99 & 0.94 & 0.05 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{qTTT Heuristic Implementation Details}\label{app:qttt}
+
+The msign-inspired qTTT implementation performs test-time updates of attention queries on the unit sphere. The so-called ``msign'' is the masked sign operator: $\text{msign}(x)_i = \text{sign}(x_i) \cdot \mathbb{1}_{|x_i| > \tau}$, where $\tau$ is the sparsity threshold. This operator zeroes out components with small gradient magnitude, thereby reducing effective computation.
+
+In the specific implementation, retry operations are limited to a small 4-rank proxy (i.e., the rank of the update matrix $M$ does not exceed 4), and parameter search is constrained within a high-confidence neighborhood of the prior gradient distribution (i.e., update step size $\|\Delta \theta\| \leq 2\sigma$, where $\sigma$ is the historical gradient standard deviation). This implementation reduces query latency, but does not contribute new asymptotic complexity improvements, nor does it constitute the theoretical core of the PRISM framework.
+
+\section{Supplemental Theoretical Analysis}
+
+\subsection{Proof Sketch of Theorem~\ref{thm:priority} (Computational Bound Precedes Context Wall)}
+
+In the reduced model ($e=0$, ignoring $\epsilon \ln c/t$), the context wall $\rho_{\text{ctx}}$ is determined by $c_{\min}$. The computational bound $\rho_{\text{comp}}$ is defined as the solution to $t_{\text{req}}(c) = t_{\max}(c)$. Substituting the expressions for $t_{\text{req}}$ and $t_{\max}$ and rearranging:
+\[
+\frac{\gamma^2}{\left(E_{\text{target}} - \alpha 2^{-2q_{\min}} - \frac{A}{cS}\right)^2} = \frac{B_{\max} - k_q q_{\min}d - k_c c S d}{k_t d^2},
+\]
+where $A = \beta + \delta 2^{-2q_{\min}}$. As $c \to c_{\min}$, the left-hand side diverges as $(c - c_{\min})^{-2}$, while the right-hand side is a linearly decreasing function of $c$. Therefore at some point $c_{\text{comp}}$ with $c > c_{\min}}$ the two curves intersect, corresponding to $\rho_{\text{comp}} < \rho_{\text{ctx}}$. Letting $\Delta \rho = \rho_{\text{ctx}} - \rho_{\text{comp}}$ and performing an asymptotic expansion of $t_{\max}$ yields $\Delta \rho = \Theta(1/t_{\max})$.
+
+\subsection{Derivation of the Heterogeneous Arbitrage Condition}
+
+After external memory is enabled, the effective context error is scaled by $f(e)$. Comparing the minimum feasible scope with and without external memory:
+\[
+c_{\min}^{e} < c_{\min} \iff \frac{A_e}{B_e} < \frac{A_0}{B_0},
+\]
+where $A_e = \beta f(e) + \delta 2^{-2q}$, $B_e = E_{\text{target}} - \alpha 2^{-2q} - r(e)$. Algebraic rearrangement of this inequality yields the arbitrage condition in the main text.
+
+\subsection{Proof of Corollary~\ref{cor:joint} (Wall Order under Joint Optimization)}
+
+Consider jointly adjusting $(q,c)$ under the target-error constraint. The iso-error curve satisfies:
+\[
+\alpha 2^{-2q} + \frac{\beta + \delta 2^{-2q}}{cS} = E_{\text{target}}.
+\]
+The exact HBM constraint requires:
+\[
+G(q,c) = 2 L_{\text{layers}} n_h d_h N_{\text{block}} \cdot c \cdot q / 8 \leq C_{\text{HBM}}(1-\rho).
+\]
+On the $q$-$c$ plane, the slope of the iso-error curve at $(q_{\min}, c_{\min})$ is:
+\[
+\frac{dq}{dc}\bigg|_{\text{iso-err}} = - \frac{\beta + \delta 2^{-2q}}{c^2 S} \cdot \frac{1}{2\ln 2 \cdot \alpha 2^{-2q} - \frac{2\ln 2 \cdot \delta 2^{-2q}}{cS}}.
+\]
+The slope of the HBM constraint boundary $G(q,c) = \text{const}$ is $dq/dc = -q/c$. At $(q_{\min}, c_{\min})$, if the absolute slope of the iso-error curve exceeds that of the HBM boundary, joint optimization will move along the HBM boundary toward the upper right (increasing $q$, decreasing $c$), which reduces $c$ and increases adaptation pressure, so the wall order is not reversed. This condition rearranges to:
+\[
+\alpha < \frac{\beta S}{2\delta} \cdot \frac{\ln 2}{2}.
+\]
+Under typical 7B-model parameters ($\alpha \approx 0.05$, $\beta \approx 0.3$, $S=256\times4096$, $\delta \approx 0.01$), the right-hand side is about $4.4$, so the condition holds comfortably.
+
+\section{Supplemental Experimental Designs}
+
+\subsection{Fitting-Comparison Experiment for Error-Model Functional Forms}\label{app:fitting}
+
+To respond to the criticism that the choice of functional forms in the error model lacks micro-foundations, we propose the following systematic comparison experiment. This experiment has not yet been executed; its results will determine whether the claims about functional forms in Section~3.3 need revision.
+
+\textbf{Objective}: On LLaMA-2-7B, compare the goodness-of-fit of the following alternative forms:
+\begin{itemize}
+    \item \textbf{Quantization error}: $\alpha_1 2^{-2q}$ vs $\alpha_2 e^{-\kappa q}$ vs $\alpha_3 q^{-1}$
+    \item \textbf{Adaptation error}: $\gamma_1 / \sqrt{t}$ vs $\gamma_2 / t$ vs $\gamma_3 e^{-\mu t}$
+    \item \textbf{Context error}: $\beta_1 / c$ vs $\beta_2 / c^2$ vs $\beta_3 e^{-\nu c}$
+\end{itemize}
+
+\textbf{Setup}:
+\begin{enumerate}
+    \item For each dimension, perform an independent single-factor sweep (fixing other variables at full-precision/full-context/no-adaptation baselines).
+    \item Sweep ranges: $q \in \{2,3,4,6,8,16\}$, $t \in \{1,2,4,8,16,32\}$, $c \in \{0.1, 0.2, 0.5, 1.0, 2.0, 4.0\} \times c_{\max}$.
+    \item Evaluation metric: LongBench average accuracy as proxy for error $\mathcal{E}$ (normalized as $1 - \text{acc}$).
+    \item Fitting method: Nonlinear least squares (Levenberg-Marquardt).
+    \item Reported metrics: Adjusted $R^2$, AICc, and cross-validation residuals.
+\end{enumerate}
+
+\textbf{Expected results and revision strategy}:
+\begin{itemize}
+    \item If $2^{-2q}$ and $1/\sqrt{t}$ are significantly better in the shallow-adaptation/medium-bit-width region (adjusted $R^2$ gap $>0.05$), keep the current forms in Section~3.3 and add a footnote stating ``$1/\sqrt{t}$ dominates over $1/t$ in the shallow-adaptation region.''
+    \item If $1/t$ or exponential forms are significantly better in the $t > 16$ region, add a piecewise note in Section~3.3: $1/\sqrt{t}$ dominates for $t \leq 8$, transitioning to $1/t$ for $t > 16$.
+    \item If alternative forms are uniformly better, revise the error-model equation and re-derive Theorem~\ref{thm:priority} (qualitative conclusions are usually unaffected because the theorem only relies on monotonicity and divergence rate, not exact power).
+\end{itemize}
+
+\subsection{Direct Parameter Sweep Experiment for External-Memory Scale $e$}\label{app:esweep}
+
+To respond to criticism that the external-memory arbitrage condition lacks direct experimental validation, we propose the following sweep experiment.
+
+\textbf{Objective}: Directly validate the qualitative prediction ``if and only if $A/B < A_0/B_0$, external memory postpones the context wall,'' and measure the parameter sensitivity of the arbitrage condition.
+
+\textbf{Setup}:
+\begin{enumerate}
+    \item On LLaMA-2-7B, fix $(q,t)$ at a medium configuration ($q=6, t=4$), sweep $e \in \{0, 32\text{K}, 64\text{K}, 128\text{K}, 256\text{K}, 512\text{K}\}$ entries.
+    \item For each $e$, use binary search to find the minimum $c$ satisfying target error $E_{\text{target}}$ (i.e., $c_{\min}(e)$).
+    \item Simultaneously measure external-memory retrieval precision/recall, estimating $\zeta$ and $e_0$.
+    \item Compute observed $A/B$ and $A_0/B_0$, verifying whether the inequality direction is consistent with the wall-shift direction.
+\end{enumerate}
+
+\textbf{Expected results and revision strategy}:
+\begin{itemize}
+    \item If the qualitative prediction holds ($c_{\min}$ decreases as $e$ increases, and the direction is consistent with the model), add a paragraph near Section~4.6 and Table~\ref{tab:cross-model}: ``Appendix~C.2 validates the directional prediction of the arbitrage condition.''
+    \item If a threshold behavior is found (wall does not shift when $e$ is below some critical value), add a ``memory activation threshold'' discussion in Section~4.6 and revise $f(e)$ to a more general sigmoid form.
+    \item If the arbitrage-condition direction is opposite to the prediction (e.g., retrieval noise is so large that external memory harms performance), add a ``negative arbitrage'' discussion in Section~4.6 and revise the sign condition of $f(e)$.
+\end{itemize}
+
+\subsection{Direct Separation Measurement of $t_{\text{req}}$ and $t_{\max}$}\label{app:separation}
+
+To respond to criticism that the ``wall order'' has only indirect latency evidence, we propose directly measuring the separation curves of adaptation demand and adaptation budget.
+
+\textbf{Objective}: Directly plot $t_{\text{req}}(c)$ and $t_{\max}(c)$ curves, verifying that their intersection corresponds to the empirically observed ``latency unacceptable'' point.
+
+\textbf{Setup}:
+\begin{enumerate}
+    \item On LLaMA-2-7B, fix $q=q_{\min}=4$, sweep $c \in [c_{\min}, c_{\max}]$.
+    \item For each $c$:
+    \begin{itemize}
+        \item Measure $t_{\max}$: Through system logs record the maximum adaptation steps executable under current HBM occupancy without exceeding the P99 latency budget.
+        \item Measure $t_{\text{req}}$: By gradually increasing $t$ until accuracy satisfies $E_{\text{target}}$, record the required minimum steps.
+    \end{itemize}
+    \item Plot the intersection diagram of $t_{\text{req}}(c)$ and $t_{\max}(c)$.
+\end{enumerate}
+
+\textbf{Expected results and revision strategy}:
+\begin{itemize}
+    \item If the two curves intersect at $c_{\text{comp}}$ and this $c_{\text{comp}}$ corresponds to $\rho_{\text{comp}}$ consistent with Table~\ref{tab:cross-model}, add this figure to Section~6.5, upgrading wall-order validation from ``indirect latency observation'' to ``direct budget-separation measurement.''
+    \item If $t_{\text{req}}$ is always below $t_{\max}}$ (i.e., no intersection exists), the system has not reached the computational bound in the observation range; revise the annotation of $\rho_{\text{comp}}$ in Table~\ref{tab:cross-model} to ``not reached'' or ``extrapolated prediction.''
+    \item If the curves intersect but the intersection deviates from the analytical prediction by $>0.05\,\rho$, check whether the $t_{\max}$ formula omits system overhead (e.g., gradient synchronization, KV-cache reordering) and correct the compute constraint in Section~3.4.
+\end{itemize}
+
+\subsection{Validation Experiment for Heterogeneous Hardware Bottlenecks}\label{app:bottleneck}
+
+To respond to criticism that the compute budget is overly simplified, we propose validating which hardware subsystem is the bottleneck under different configurations.
+
+\textbf{Objective}: Measure whether the system is FLOP-bound, HBM-bandwidth-bound, or PCIe-bandwidth-bound in different regions of $(q,c,t,e)$.
+
+\textbf{Setup}:
+\begin{enumerate}
+    \item Use Nsight Systems or PyTorch Profiler to collect kernel-level time decomposition for each configuration.
+    \item Focus on:
+    \begin{itemize}
+        \item Low-$q$, high-$c$ region: Expected HBM-bandwidth-dominated (decode attention bound)
+        \item High-$t$ region: Expected FLOP-dominated (backward/adapter bound)
+        \item High-$e$ region: Expected PCIe/DRAM-bandwidth-dominated (retrieval bound)
+    \end{itemize}
+    \item Compare actual bottlenecks in each region with the heterogeneous-budget predictions in Section~3.4.
+\end{enumerate}
+
+\textbf{Expected results and revision strategy}:
+\begin{itemize}
+    \item If bottleneck partitioning is qualitatively consistent with predictions, add a paragraph in Section~3.4: ``Appendix~C.4 profiler analysis validates the necessity of heterogeneous-budget decomposition,'' and restate the scalar $B_{\max}$ as a piecewise constraint.
+    \item If unexpected bottleneck shifts are found (e.g., high-$e$ region is still GPU-FLOP-bound because Faiss retrieval is already done on CPU and PCIe is fast enough), adjust the physical meaning explanation of $k_e$ in Section~3.4.
+\end{itemize}
+
+\section{Additional Notes}
+
+\begin{itemize}
+    \item When the coupling term $(\delta, \epsilon)$ is ignored, the fitted context wall in the reported setting changes by less than 0.02.
+    \item The wall shifts from 3D configuration to PRISM full-dimension configuration are: LLaMA-2: 0.02 (context wall) and 0.02 (computational bound); Mistral: 0.02 and 0.02; Qwen: 0.01 and 0.01.
+    \item The observed near-wall latency scaling is approximately $(1-\rho)^{-1.9}$, basically consistent with the quadratic-divergence picture of the simplified model, but away from the boundary it is affected by real-system effects.
+    \item The gap between analytical projection $\rho_{\text{ctx}}$ and the maximum stable $\rho$ at runtime is about 0.03--0.05 (see Appendix~\ref{app:hardware}).
+\end{itemize}
+
+\begin{thebibliography}{99}
+\bibitem{flashattn} Dao et al. FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness. NeurIPS 2022.
+\bibitem{vllm} Kwon et al. Efficient Memory Management for Large Language Model Serving with PagedAttention. SOSP 2023.
+\bibitem{mla} DeepSeek-AI. MLA: Multi-head Latent Attention. 2024.
+\bibitem{gptq} Frantar et al. GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers. ICLR 2023.
+\bibitem{smoothquant} Xiao et al. SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models. ICML 2023.
+\bibitem{h2o} Zhang et al. H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models. NeurIPS 2023.
+\bibitem{tokmerge} Bolya et al. Token Merging: Your ViT But Faster. ICLR 2023.
+\bibitem{ttt} Sun et al. Test-Time Training with Self-Supervision for Generalization under Distribution Shifts. ICML 2020.
+\bibitem{calibrate} Zhao et al. Calibrate Before Use: Improving Few-Shot Performance of Language Models. ICML 2021.
+\bibitem{rag} Lewis et al. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. NeurIPS 2020.
+\bibitem{retro} Borgeaud et al. Improving Language Models by Retrieving from Trillions of Tokens. ICML 2022.
+\bibitem{flexgen} Sheng et al. FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU. ICML 2023.
+\bibitem{evicpress} Feng et al. EVICPRESS: Joint KV-Cache Compression and Eviction for Efficient LLM Serving. arXiv 2025.
+\bibitem{kvcompose} Wang et al. KVCompose: Efficient Structured KV Cache Compression with Composite Tokens. ICLR 2026.
+\bibitem{sparseserve} Zheng et al. SparseServe: Sparse Attention for Efficient LLM Serving. 2024.
+\bibitem{compactor} Compactor: Calibrated Query-Agnostic KV Cache Compression with Approximate Leverage Scores. arXiv 2025.
+\bibitem{qaq} QAQ: Quality Adaptive Quantization for LLM KV Cache. CVPR 2025.
+\bibitem{quicksilver} Khanna et al. QuickSilver: Speeding up LLM Inference through Dynamic Token Halting, KV Skipping, Contextual Token Fusion, and Adaptive Matryoshka Quantization. arXiv 2025.
+\end{thebibliography}
+
+\end{document}

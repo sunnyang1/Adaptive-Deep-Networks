@@ -96,7 +96,7 @@ $$
 \underbrace{\alpha 2^{-2R}}_{\text{量化}}
 
 - \underbrace{\frac{\beta f(E)}{MS}}_{\text{上下文范围}}
-- \underbrace{\frac{\gamma}{\sqrt{T}}}*{\text{适配}} 
+- \underbrace{\frac{\gamma}{\sqrt{T}}}*{\text{适配}}
 &+ \underbrace{\delta\frac{2^{-2R}}{M} + \epsilon\frac{\ln M}{T}}*{\text{耦合项}}
 - \underbrace{r(E)}_{\text{检索项}} .
 \end{aligned}
@@ -113,7 +113,7 @@ $$
 $$
 r(E)=
 \begin{cases}
-0, & E=0, 
+0, & E=0,
 r_{\min}+\eta/E, & E>0
 \end{cases}
 $$
